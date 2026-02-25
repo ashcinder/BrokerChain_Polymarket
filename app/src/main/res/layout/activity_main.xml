@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F7FA">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BrokerChain Wallet 预测市场" android:textSize="22sp" android:textStyle="bold" android:layout_gravity="center" android:layout_marginBottom="20dp" android:textColor="#1A237E"/>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#FFFFFF" android:padding="16dp" android:elevation="2dp" android:layout_marginBottom="16dp">
+            <TextView android:id="@+id/tv_wallet_balance" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="余额: -- BKC" android:textSize="20sp" android:textStyle="bold" android:textColor="#1976D2"/>
+            <TextView android:id="@+id/tv_wallet_address" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="地址: 加载中..." android:textSize="10sp" android:textColor="#666666"/>
+            <Button android:id="@+id/btn_refresh_all" android:layout_width="match_parent" android:layout_height="40dp" android:layout_marginTop="8dp" android:text="同步全链数据" android:backgroundTint="#1976D2"/>
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#E8F5E9" android:padding="12dp" android:layout_marginBottom="16dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="📊 我的持仓" android:textStyle="bold" android:textColor="#2E7D32"/>
+            <TextView android:id="@+id/tv_my_positions" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="暂无持仓" android:textSize="12sp" android:textColor="#333333"/>
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#FFF3E0" android:padding="12dp" android:layout_marginBottom="16dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🌐 博弈大厅 (含实时赔率)" android:textStyle="bold" android:textColor="#EF6C00"/>
+            <TextView android:id="@+id/tv_lobby_games" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="加载中..." android:textSize="12sp" android:lineSpacingExtra="4dp"/>
+        </LinearLayout>
+
+        <EditText android:id="@+id/et_game_desc" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="[1] 博弈主题 (例: Testing)"/>
+        <Button android:id="@+id/btn_create_game" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="创建博弈池" android:backgroundTint="#43A047" android:layout_marginBottom="8dp"/>
+
+        <EditText android:id="@+id/et_stake_game_id" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="[2] 目标游戏 ID" android:inputType="number"/>
+        <RadioGroup android:id="@+id/rg_stake_option" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <RadioButton android:id="@+id/rb_stake_op1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="选项 1" android:checked="true"/>
+            <RadioButton android:id="@+id/rb_stake_op2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="选项 2" android:layout_marginStart="16dp"/>
+        </RadioGroup>
+        <EditText android:id="@+id/et_stake_amount" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="质押金额 (最小 1 BKC)" android:inputType="numberDecimal"/>
+        <Button android:id="@+id/btn_stake" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="确认质押" android:backgroundTint="#1E88E5" android:layout_marginBottom="16dp"/>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#37474F" android:padding="12dp" android:layout_marginBottom="16dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="📡 预言机节点 (Oracle Node)" android:textColor="#00E676" android:textStyle="bold"/>
+            <EditText android:id="@+id/et_resolve_game_id" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="开奖 ID" android:textColorHint="#90A4AE" android:textColor="#FFFFFF" android:inputType="number"/>
+            <RadioGroup android:id="@+id/rg_resolve_option" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                <RadioButton android:id="@+id/rb_resolve_op1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="1 赢" android:textColor="#FFFFFF" android:checked="true"/>
+                <RadioButton android:id="@+id/rb_resolve_op2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="2 赢" android:textColor="#FFFFFF" android:layout_marginStart="16dp"/>
+            </RadioGroup>
+            <Button android:id="@+id/btn_resolve" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="发布真实世界结果" android:backgroundTint="#00C853"/>
+        </LinearLayout>
+
+        <EditText android:id="@+id/et_claim_game_id" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="[4] 清算 ID" android:inputType="number"/>
+        <Button android:id="@+id/btn_claim" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="执行智能清算提现" android:backgroundTint="#FB8C00"/>
+
+        <TextView android:id="@+id/tv_log" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="150dp" android:layout_marginTop="16dp" android:background="#212121" android:textColor="#76FF03" android:padding="10dp" android:textSize="10sp" android:fontFamily="monospace"/>
+
+    </LinearLayout>
+</ScrollView>

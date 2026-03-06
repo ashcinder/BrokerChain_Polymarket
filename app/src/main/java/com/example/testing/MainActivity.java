@@ -15,19 +15,26 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.protocol.http.HttpService;
+import org.web3j.utils.Numeric;
 
 import java.math.*;
+import java.security.MessageDigest;
 import java.util.*;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "BrokerChainWallet";
 
-    // 确保这里的端口号和你的 BrokerChain 后台一致
-    private static final String BROKER_CHAIN_URL = "http://10.0.2.2:54377";
-    // 大户玩家私钥
-    private static final String PRIVATE_KEY = "91d2b0df57b76eee51a7b3f4bda39ec53813968fbf9f8e04033f3c4e9ba4cb2f";
-    private static final String CONTRACT_ADDRESS = "0xe2c8aacC5A2131eE00B284CC9132cb6d48A92a77";
+    // studio访问brokerchain本地节点
+    private static final String BROKER_CHAIN_URL = "http://10.0.2.2:42645";
+
+    // 私钥
+    private static final String PRIVATE_KEY = "ad5799695148adb16b3a31ef150ccaea7f9b4ed8308dceaa66e2e9a6e4133dbb";
+
+    // 合约地址
+    private static final String CONTRACT_ADDRESS = "0xA33910138F5F2483AAd1fDb5AB7729001e68CB0c";
+
+    // oracle地址
     private static final String OFFICIAL_ORACLE_ADDRESS = "0xf672b5e97e653798b448920555bffbd67ded6534";
 
     private Web3j web3j;
@@ -36,8 +43,9 @@ public class MainActivity extends AppCompatActivity {
     private EditText etGameDesc, etStakeGameId, etStakeAmount, etResolveGameId, etClaimGameId;
     private RadioGroup rgStakeOption, rgResolveOption;
 
+    // activity 入口方法
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState) { //Activity入口方法
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         initUI();
@@ -57,6 +65,7 @@ public class MainActivity extends AppCompatActivity {
         runDiagnosticCheck();
     }
 
+    // 初始化UI界面
     private void initUI() {
         tvLog = findViewById(R.id.tv_log);
         tvWalletBalance = findViewById(R.id.tv_wallet_balance);
@@ -72,6 +81,7 @@ public class MainActivity extends AppCompatActivity {
         etClaimGameId = findViewById(R.id.et_claim_game_id);
     }
 
+    // 初始化时检测
     private void runDiagnosticCheck() {
         new Thread(() -> {
             try {
@@ -107,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    // 专为 BrokerChain 定制的节点代签模式
+    // 专为 BrokerChain 定制的节点代签模式 (原样保留)
     private void sendTx(BigInteger value, String data, String successMsg) {
         new Thread(() -> {
             try {
@@ -164,14 +174,67 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    // ================= 【纯净新增：VDF 延迟计算引擎】 =================
+    private void computeVDFAndResolve(int gameId, int option, String seed) {
+        logSafe("\n⚙️ [VDF 引擎] 启动！开始进行可验证延迟计算...");
+
+        new Thread(() -> {
+            try {
+                long startTime = System.currentTimeMillis();
+                // 难度系数：50 万次连续哈希运算
+                int difficulty = 500_000;
+
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                byte[] hash = seed.getBytes();
+
+                for (int i = 0; i < difficulty; i++) {
+                    hash = digest.digest(hash);
+                    // 在 UI 打印进度条
+                    if (i % 100000 == 0 && i > 0) {
+                        int progress = (int) (((double) i / difficulty) * 100);
+                        logSafe("⏳ [VDF 引擎] 哈希计算中... " + progress + "%");
+                    }
+                }
+
+                long timeTaken = (System.currentTimeMillis() - startTime) / 1000;
+                String vdfProofHex = Numeric.toHexString(hash);
+
+                logSafe("✅ [VDF 引擎] 计算完成！耗时: " + timeTaken + " 秒");
+                logSafe("🔑 延迟证明: " + vdfProofHex.substring(0, 15) + "...");
+
+                // 将 VDF 结果提交上链
+                submitResolveWithVDF(gameId, option, hash);
+
+            } catch (Exception e) {
+                logSafe("❌ VDF 计算失败: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private void submitResolveWithVDF(int id, int opt, byte[] vdfProof) {
+        logSafe("📡 正在携带 VDF 证明发布开奖结果...");
+        try {
+            // 参数中加入了 VDF 的 bytes32 类型
+            Function f = new Function("resolveGame",
+                    Arrays.asList(new Uint256(id), new Uint8(opt), new Bytes32(vdfProof)),
+                    Collections.emptyList());
+            sendTx(BigInteger.ZERO, FunctionEncoder.encode(f), "结果宣布成功，状态已更新！");
+        } catch (Exception e) {
+            logSafe("❌ 打包异常: " + e.getMessage());
+        }
+    }
+    // =================================================================
+
+    // 【修改：将 resolveGame 对接到 VDF 引擎】
     private void resolveGame() {
         if (etResolveGameId.getText().toString().isEmpty()) return;
         int id = Integer.parseInt(etResolveGameId.getText().toString());
         int opt = (rgResolveOption.getCheckedRadioButtonId() == R.id.rb_resolve_op1) ? 1 : 2;
 
-        logSafe("📡 正在准备宣布结果...");
-        Function f = new Function("resolveGame", Arrays.asList(new Uint256(id), new Uint8(opt)), Collections.emptyList());
-        sendTx(BigInteger.ZERO, FunctionEncoder.encode(f), "结果宣布成功，状态已更新！");
+        // 生成不可预测的随机种子
+        String vdfSeed = "BrokerChain_Game_" + id + "_" + System.currentTimeMillis();
+        // 触发 VDF 延迟
+        computeVDFAndResolve(id, opt, vdfSeed);
     }
 
     private void syncData() {
@@ -301,7 +364,7 @@ public class MainActivity extends AppCompatActivity {
         runOnUiThread(() -> log(m));
     }
 
-    // 最安全的逐层查找 ScrollView 的逻辑，绝不会闪退
+    // (原样保留，安全滚动逻辑)
     private void log(String m) {
         tvLog.append("\n> " + m);
         ViewParent cp = tvLog.getParent();

@@ -236,6 +236,54 @@
                                 android:layout_height="1dp"
                                 android:background="#E2E8F0" />
 
+                            <LinearLayout
+                                android:id="@+id/ll_select_avatar"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:background="#F8FAFC"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal"
+                                android:padding="14dp"
+                                android:clickable="true"
+                                android:focusable="true">
+
+                                <ImageView
+                                    android:id="@+id/iv_selected_avatar"
+                                    android:layout_width="50dp"
+                                    android:layout_height="50dp"
+                                    android:layout_marginEnd="12dp"
+                                    android:background="#E2E8F0"
+                                    android:scaleType="centerCrop"
+                                    android:src="@android:drawable/ic_menu_camera"
+                                    app:tint="#94A3B8" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="点击选择博弈池封面图 (必选)"
+                                    android:textColor="#64748B"
+                                    android:textSize="14sp" />
+                            </LinearLayout>
+
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="1dp"
+                                android:background="#E2E8F0" />
+
+                            <EditText
+                                android:id="@+id/et_detailed_info"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:background="#F8FAFC"
+                                android:hint="详细背景介绍"
+                                android:padding="14dp"
+                                android:textSize="14sp" />
+
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="1dp"
+                                android:background="#E2E8F0" />
+
                             <EditText
                                 android:id="@+id/et_options"
                                 android:layout_width="match_parent"

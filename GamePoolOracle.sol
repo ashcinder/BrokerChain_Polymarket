@@ -8,6 +8,8 @@ contract PredictionMarket {
         uint256 id;
         string description;
         string condition;
+        string avatarUrl;      // 🌟 新增：头像网络链接
+        string detailedInfo;   // 🌟 新增：博弈池详细介绍
         string[] optionNames;
         uint8 optionCount;
         uint256 totalPool;
@@ -26,13 +28,23 @@ contract PredictionMarket {
         officialOracle = msg.sender;
     }
 
-    function createGame(string memory _desc, string memory _condition, string[] memory _optionNames, uint256 _duration) public {
+    // 🌟 修改：在创建方法中加入 _avatarUrl 和 _detailedInfo
+    function createGame(
+        string memory _desc,
+        string memory _condition,
+        string memory _avatarUrl,
+        string memory _detailedInfo,
+        string[] memory _optionNames,
+        uint256 _duration
+    ) public {
         require(_optionNames.length >= 2, "At least 2 options");
         gameCount++;
         Game storage g = games[gameCount];
         g.id = gameCount;
         g.description = _desc;
         g.condition = _condition;
+        g.avatarUrl = _avatarUrl;       // 保存头像
+        g.detailedInfo = _detailedInfo; // 保存详细信息
         g.optionNames = _optionNames;
         g.optionCount = uint8(_optionNames.length);
         g.deadline = block.timestamp + _duration;
@@ -75,26 +87,28 @@ contract PredictionMarket {
         payable(msg.sender).transfer(payout);
     }
 
-    // ================= 接口 1：获取基础信息（无变化，不会触发 Stack Too Deep） =================
-    function getGameInfo(uint256 _id) public view returns (string memory, string memory, string[] memory, uint8, uint256, bool, uint8, uint256, bool) {
+    // 🌟 修改：基础信息查询接口，增加返回 avatarUrl 和 detailedInfo
+    function getGameInfo(uint256 _id) public view returns (
+        string memory, string memory, string memory, string memory,
+        string[] memory, uint8, uint256, bool, uint8, uint256, bool
+    ) {
         Game storage g = games[_id];
-        return (g.description, g.condition, g.optionNames, g.optionCount, g.totalPool, g.isResolved, g.winningOption, g.deadline, g.isRefunded);
+        return (
+            g.description, g.condition, g.avatarUrl, g.detailedInfo,
+            g.optionNames, g.optionCount, g.totalPool, g.isResolved,
+            g.winningOption, g.deadline, g.isRefunded
+        );
     }
 
-    // ================= 接口 2：核心性能优化！单独获取动态数组，彻底解决 N+1 查询问题 =================
+    // 独立获取资金池和质押数据的接口保持不变
     function getGameExtraData(uint256 _gameId, address _user) public view returns (uint256[] memory pools, uint256[] memory userStakes) {
         Game storage g = games[_gameId];
-
-        // 在内存中分配数组空间
         uint256[] memory _pools = new uint256[](g.optionCount);
         uint256[] memory _userStakes = new uint256[](g.optionCount);
-
-        // 在合约内部一次性循环完毕
         for (uint8 i = 0; i < g.optionCount; i++) {
             _pools[i] = g.optionPools[i];
             _userStakes[i] = stakes[_gameId][_user][i];
         }
-
         return (_pools, _userStakes);
     }
 }

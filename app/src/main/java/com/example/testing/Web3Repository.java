@@ -22,8 +22,8 @@ import java.util.List;
 public class Web3Repository {
     private static final String TAG = "Web3Repository";
 
-    // ⚠️ 请修改为刚才重新编译部署的最新合约地址
-    private static final String CONTRACT_ADDRESS = "0x4c48Be859684D34fB82c24388237F70a4F240e98";
+    // ⚠️ 极其重要：请替换为你刚部署的支持头像和介绍的最新合约地址！
+    private static final String CONTRACT_ADDRESS = "0xa5C9AA42021FfE5DDa9717BFC3707fe21076aAdf";
 
     private final Credentials credentials;
     private final Web3j web3j;
@@ -121,6 +121,25 @@ public class Web3Repository {
         });
     }
 
+    public void getOracleAddress(DataCallback<String> callback) {
+        AppExecutors.getInstance().networkIO().execute(() -> {
+            try {
+                Function f = new Function("officialOracle", Collections.emptyList(), Collections.singletonList(new TypeReference<Address>() {}));
+                String resHex = ethCall(f);
+                if (resHex != null && !resHex.equals("0x")) {
+                    List<Type> res = FunctionReturnDecoder.decode(resHex, f.getOutputParameters());
+                    if (!res.isEmpty()) {
+                        AppExecutors.getInstance().mainThread().execute(() -> callback.onSuccess(((Address) res.get(0)).getValue()));
+                        return;
+                    }
+                }
+                postError(callback, "获取预言机地址失败");
+            } catch (Exception e) {
+                postError(callback, e.getMessage());
+            }
+        });
+    }
+
     public void getBalance(DataCallback<BigDecimal> callback) {
         AppExecutors.getInstance().networkIO().execute(() -> {
             try {
@@ -155,9 +174,9 @@ public class Web3Repository {
 
                 for (int i = 1; i <= count; i++) {
                     try {
-                        // 1. 先抓取基础信息
                         Function fInfo = new Function("getGameInfo", Collections.singletonList(new Uint256(i)),
                                 Arrays.asList(
+                                        new TypeReference<Utf8String>() {}, new TypeReference<Utf8String>() {},
                                         new TypeReference<Utf8String>() {}, new TypeReference<Utf8String>() {},
                                         new TypeReference<DynamicArray<Utf8String>>() {}, new TypeReference<Uint8>() {},
                                         new TypeReference<Uint256>() {}, new TypeReference<Bool>() {},
@@ -174,17 +193,20 @@ public class Web3Repository {
                         model.id = i;
                         model.desc = ((Utf8String) res.get(0)).getValue();
                         model.condition = ((Utf8String) res.get(1)).getValue();
-                        List<Utf8String> namesList = ((DynamicArray<Utf8String>) res.get(2)).getValue();
+                        model.avatarUrl = ((Utf8String) res.get(2)).getValue();
+                        model.detailedInfo = ((Utf8String) res.get(3)).getValue();
+
+                        List<Utf8String> namesList = ((DynamicArray<Utf8String>) res.get(4)).getValue();
                         model.optionNames = new ArrayList<>();
                         for (Utf8String u : namesList) model.optionNames.add(u.getValue());
-                        model.optionCount = ((Uint8) res.get(3)).getValue().intValue();
-                        model.totalPool = ((Uint256) res.get(4)).getValue();
-                        model.isResolved = ((Bool) res.get(5)).getValue();
-                        model.winningOption = ((Uint8) res.get(6)).getValue().intValue();
-                        model.deadlineSec = ((Uint256) res.get(7)).getValue().longValue();
-                        model.isRefunded = ((Bool) res.get(8)).getValue();
 
-                        // 2. 核心优化：再抓取资金池数组和质押数组 (代替嵌套的 N 次抓取)
+                        model.optionCount = ((Uint8) res.get(5)).getValue().intValue();
+                        model.totalPool = ((Uint256) res.get(6)).getValue();
+                        model.isResolved = ((Bool) res.get(7)).getValue();
+                        model.winningOption = ((Uint8) res.get(8)).getValue().intValue();
+                        model.deadlineSec = ((Uint256) res.get(9)).getValue().longValue();
+                        model.isRefunded = ((Bool) res.get(10)).getValue();
+
                         Function fExtra = new Function("getGameExtraData",
                                 Arrays.asList(new Uint256(i), new Address(credentials.getAddress())),
                                 Arrays.asList(
@@ -223,9 +245,9 @@ public class Web3Repository {
     public void getGameDetail(int id, DataCallback<GameModel> callback) {
         AppExecutors.getInstance().networkIO().execute(() -> {
             try {
-                // 1. 拉取基础详情
                 Function fInfo = new Function("getGameInfo", Collections.singletonList(new Uint256(id)),
                         Arrays.asList(
+                                new TypeReference<Utf8String>() {}, new TypeReference<Utf8String>() {},
                                 new TypeReference<Utf8String>() {}, new TypeReference<Utf8String>() {},
                                 new TypeReference<DynamicArray<Utf8String>>() {}, new TypeReference<Uint8>() {},
                                 new TypeReference<Uint256>() {}, new TypeReference<Bool>() {},
@@ -248,17 +270,20 @@ public class Web3Repository {
                 model.id = id;
                 model.desc = ((Utf8String) res.get(0)).getValue();
                 model.condition = ((Utf8String) res.get(1)).getValue();
-                List<Utf8String> namesList = ((DynamicArray<Utf8String>) res.get(2)).getValue();
+                model.avatarUrl = ((Utf8String) res.get(2)).getValue();
+                model.detailedInfo = ((Utf8String) res.get(3)).getValue();
+
+                List<Utf8String> namesList = ((DynamicArray<Utf8String>) res.get(4)).getValue();
                 model.optionNames = new ArrayList<>();
                 for (Utf8String u : namesList) model.optionNames.add(u.getValue());
-                model.optionCount = ((Uint8) res.get(3)).getValue().intValue();
-                model.totalPool = ((Uint256) res.get(4)).getValue();
-                model.isResolved = ((Bool) res.get(5)).getValue();
-                model.winningOption = ((Uint8) res.get(6)).getValue().intValue();
-                model.deadlineSec = ((Uint256) res.get(7)).getValue().longValue();
-                model.isRefunded = ((Bool) res.get(8)).getValue();
 
-                // 2. 拉取关联数组数据
+                model.optionCount = ((Uint8) res.get(5)).getValue().intValue();
+                model.totalPool = ((Uint256) res.get(6)).getValue();
+                model.isResolved = ((Bool) res.get(7)).getValue();
+                model.winningOption = ((Uint8) res.get(8)).getValue().intValue();
+                model.deadlineSec = ((Uint256) res.get(9)).getValue().longValue();
+                model.isRefunded = ((Bool) res.get(10)).getValue();
+
                 Function fExtra = new Function("getGameExtraData",
                         Arrays.asList(new Uint256(id), new Address(credentials.getAddress())),
                         Arrays.asList(
@@ -299,6 +324,8 @@ public class Web3Repository {
         public int id;
         public String desc;
         public String condition;
+        public String avatarUrl;
+        public String detailedInfo;
         public List<String> optionNames;
         public int optionCount;
         public BigInteger totalPool;

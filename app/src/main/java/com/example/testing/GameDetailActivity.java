@@ -7,6 +7,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -42,7 +43,6 @@ public class GameDetailActivity extends AppCompatActivity {
     private Web3Repository repository;
     private int targetGameId;
 
-    // 预设几组不同选项的图表颜色
     private final int[] CHART_COLORS = {0xFF0052FF, 0xFFF59E0B, 0xFFEF4444, 0xFF10B981};
 
     @Override
@@ -91,15 +91,24 @@ public class GameDetailActivity extends AppCompatActivity {
         TextView tvDeadline = findViewById(R.id.tv_detail_deadline);
         LinearLayout llOptions = findViewById(R.id.ll_detail_options);
 
+        ImageView ivAvatar = findViewById(R.id.iv_detail_avatar);
+        TextView tvDetailInfo = findViewById(R.id.tv_detail_info);
+
         tvTitle.setText(game.desc);
         tvVolume.setText("总交易量: " + formatWei(game.totalPool) + " BKC");
         tvCondition.setText("清算规则: " + game.condition);
 
-        // 🌟 核心修复 4：直接传入链上返回的毫秒级时间，不再乘以 1000
+        if (tvDetailInfo != null) {
+            String infoText = (game.detailedInfo == null || game.detailedInfo.isEmpty()) ? "暂无背景介绍" : game.detailedInfo;
+            tvDetailInfo.setText(infoText);
+        }
+        if (ivAvatar != null && game.avatarUrl != null) {
+            MainActivity.loadNetworkImage(game.avatarUrl, ivAvatar);
+        }
+
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
         tvDeadline.setText("截止时间: " + sdf.format(new Date(game.deadlineSec)));
 
-        // 🌟 核心修复 5：使用毫秒进行时间判断
         long currentMs = System.currentTimeMillis();
 
         if (game.isResolved) {
@@ -154,7 +163,6 @@ public class GameDetailActivity extends AppCompatActivity {
             btnBuy.setTextColor(0xFF0052FF);
             btnBuy.setCornerRadius(12);
 
-            // 🌟 核心修复 6：按钮状态也使用毫秒判断
             if (game.isResolved || game.isRefunded || currentMs > game.deadlineSec) {
                 btnBuy.setEnabled(false);
                 btnBuy.setBackgroundColor(0xFFF1F5F9);

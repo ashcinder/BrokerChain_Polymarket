@@ -1,22 +1,30 @@
 package com.example.testing;
 
+import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -27,6 +35,7 @@ import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
 import com.google.android.material.button.MaterialButton;
 
+import org.json.JSONObject;
 import org.web3j.abi.datatypes.DynamicArray;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Utf8String;
@@ -34,14 +43,21 @@ import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.generated.Uint8;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Scanner;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -50,11 +66,12 @@ public class MainActivity extends AppCompatActivity {
     private List<Web3Repository.GameModel> allGamesList = new ArrayList<>();
     private String privateKey;
 
-    private static final String CONTRACT_BYTECODE = "0x"; // <--- 填入你的 bytecode
-
     private enum ViewMode {HOME, PORTFOLIO, CREATE, PROFILE}
 
     private ViewMode currentMode = ViewMode.HOME;
+
+    private Uri selectedImageUri = null;
+    private ActivityResultLauncher<Intent> imagePickerLauncher;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,19 +86,64 @@ public class MainActivity extends AppCompatActivity {
         }
 
         repository = new Web3Repository(privateKey);
+
+        initImagePicker();
+
         setupNavigation();
         setupProfile();
         setupCreateTabLogic();
         setupUI();
-
-        View cvResolve = findViewById(R.id.cv_resolve_market);
-        if (cvResolve != null) cvResolve.setVisibility(View.VISIBLE);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         syncData();
+    }
+
+    private void initImagePicker() {
+        imagePickerLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+                        selectedImageUri = result.getData().getData();
+                        ImageView ivSelected = findViewById(R.id.iv_selected_avatar);
+                        if (ivSelected != null) {
+                            ivSelected.setImageURI(selectedImageUri);
+                            ivSelected.clearColorFilter();
+                        }
+                    }
+                });
+    }
+
+    private String getBase64FromUri(Uri uri) {
+        try {
+            InputStream is = getContentResolver().openInputStream(uri);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = is.read(buffer)) != -1) {
+                baos.write(buffer, 0, len);
+            }
+            byte[] bytes = baos.toByteArray();
+            // 🚨 核心修复：必须使用 NO_WRAP 模式，禁止加入任何换行符！
+            return Base64.encodeToString(bytes, Base64.NO_WRAP);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static void loadNetworkImage(String urlStr, ImageView imageView) {
+        if (urlStr == null || urlStr.isEmpty() || !urlStr.startsWith("http")) return;
+        AppExecutors.getInstance().networkIO().execute(() -> {
+            try {
+                InputStream in = new URL(urlStr).openStream();
+                Bitmap bmp = BitmapFactory.decodeStream(in);
+                AppExecutors.getInstance().mainThread().execute(() -> imageView.setImageBitmap(bmp));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
 
     private String getFriendlyErrorMessage(String rawError) {
@@ -165,6 +227,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupCreateTabLogic() {
+        LinearLayout llSelectAvatar = findViewById(R.id.ll_select_avatar);
+        if (llSelectAvatar != null) {
+            llSelectAvatar.setOnClickListener(v -> {
+                Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+                imagePickerLauncher.launch(intent);
+            });
+        }
+
         MaterialButton btnDeploy = findViewById(R.id.btn_deploy_game);
         if (btnDeploy != null) {
             btnDeploy.setOnClickListener(v -> {
@@ -172,9 +242,11 @@ public class MainActivity extends AppCompatActivity {
                 String cond = ((EditText) findViewById(R.id.et_condition)).getText().toString().trim();
                 String optsStr = ((EditText) findViewById(R.id.et_options)).getText().toString().trim();
                 String durationStr = ((EditText) findViewById(R.id.et_duration)).getText().toString().trim();
+                EditText etDetail = findViewById(R.id.et_detailed_info);
+                String detailInfo = etDetail != null ? etDetail.getText().toString().trim() : "";
 
-                if (TextUtils.isEmpty(desc) || TextUtils.isEmpty(cond) || TextUtils.isEmpty(optsStr) || TextUtils.isEmpty(durationStr)) {
-                    Toast.makeText(this, "请完整填写所有发行信息", Toast.LENGTH_SHORT).show();
+                if (TextUtils.isEmpty(desc) || TextUtils.isEmpty(cond) || TextUtils.isEmpty(optsStr) || TextUtils.isEmpty(durationStr) || selectedImageUri == null) {
+                    Toast.makeText(this, "请完整填写信息，并选择一张封面图", Toast.LENGTH_SHORT).show();
                     return;
                 }
 
@@ -184,18 +256,79 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
 
-                // 🌟 核心修复 1：将持续时间转换为毫秒 (乘以 60 * 1000)
                 long durationMs = Long.parseLong(durationStr) * 60 * 1000;
-
                 List<Utf8String> utf8List = new ArrayList<>();
                 for (String s : optsArray) utf8List.add(new Utf8String(s.trim()));
                 DynamicArray<Utf8String> web3jOptions = new DynamicArray<>(Utf8String.class, utf8List);
 
-                Function f = new Function("createGame", Arrays.asList(
-                        new Utf8String(desc), new Utf8String(cond), web3jOptions, new Uint256(durationMs) // 传入毫秒
-                ), Collections.emptyList());
+                btnDeploy.setEnabled(false);
+                btnDeploy.setText("正在上传图片到云端...");
 
-                executeTx(BigInteger.ZERO, f, "🎉 预测池发行成功！");
+                AppExecutors.getInstance().networkIO().execute(() -> {
+                    String base64Image = getBase64FromUri(selectedImageUri);
+                    if (base64Image == null) {
+                        runOnUiThread(() -> {
+                            Toast.makeText(this, "图片处理失败", Toast.LENGTH_SHORT).show();
+                            btnDeploy.setEnabled(true);
+                            btnDeploy.setText("签名并上链创建博弈");
+                        });
+                        return;
+                    }
+
+                    try {
+                        String imgbbApiKey = "888ee297ffeb9dadd82138c57672647d";
+                        URL url = new URL("https://api.imgbb.com/1/upload");
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod("POST");
+                        conn.setDoOutput(true);
+
+                        // 🚨 核心修复：显式告诉 ImgBB 我们的数据格式是 URL 编码的表单
+                        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+
+                        String postData = "key=" + imgbbApiKey + "&image=" + URLEncoder.encode(base64Image, "UTF-8");
+                        try (java.io.OutputStream os = conn.getOutputStream()) {
+                            os.write(postData.getBytes(StandardCharsets.UTF_8));
+                        }
+
+                        if (conn.getResponseCode() == 200) {
+                            Scanner scanner = new Scanner(conn.getInputStream(), "UTF-8").useDelimiter("\\A");
+                            String response = scanner.hasNext() ? scanner.next() : "";
+                            JSONObject json = new JSONObject(response);
+
+                            String uploadedUrl = json.getJSONObject("data").getString("url");
+
+                            AppExecutors.getInstance().mainThread().execute(() -> {
+                                btnDeploy.setText("图片上传成功，正在上链...");
+                                Function f = new Function("createGame", Arrays.asList(
+                                        new Utf8String(desc), new Utf8String(cond), new Utf8String(uploadedUrl),
+                                        new Utf8String(detailInfo), web3jOptions, new Uint256(durationMs)
+                                ), Collections.emptyList());
+
+                                executeTx(BigInteger.ZERO, f, "🎉 预测池发行成功！", btnDeploy);
+                            });
+                        } else {
+                            // 🚨 新增排错：如果服务器拒绝，把真正原因打印到 Logcat 中
+                            InputStream errorStream = conn.getErrorStream();
+                            if (errorStream != null) {
+                                Scanner scanner = new Scanner(errorStream, "UTF-8").useDelimiter("\\A");
+                                String errorBody = scanner.hasNext() ? scanner.next() : "未知错误";
+                                android.util.Log.e("UploadError", "ImgBB 拒绝了请求: " + errorBody);
+                            }
+
+                            runOnUiThread(() -> {
+                                Toast.makeText(this, "图片上传被拒" , Toast.LENGTH_SHORT).show();
+                                btnDeploy.setEnabled(true);
+                                btnDeploy.setText("签名并上链创建博弈");
+                            });
+                        }
+                    } catch (Exception e) {
+                        runOnUiThread(() -> {
+                            Toast.makeText(this, "上传网络异常: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            btnDeploy.setEnabled(true);
+                            btnDeploy.setText("签名并上链创建博弈");
+                        });
+                    }
+                });
             });
         }
 
@@ -231,7 +364,7 @@ public class MainActivity extends AppCompatActivity {
                             Function f = new Function("resolveGame", Arrays.asList(
                                     new Uint256(gameId), new Uint8(winOpt), new Bytes32(finalHash)
                             ), Collections.emptyList());
-                            executeTx(BigInteger.ZERO, f, "✅ 预言机开奖决议已上链！");
+                            executeTx(BigInteger.ZERO, f, "✅ 预言机开奖决议已上链！", null);
                         });
                     } catch (Exception e) {
                         AppExecutors.getInstance().mainThread().execute(() -> {
@@ -248,13 +381,40 @@ public class MainActivity extends AppCompatActivity {
     private void setupUI() {
         binding.etSearchBar.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 filterGames(s.toString());
             }
+
             @Override
-            public void afterTextChanged(Editable s) {}
+            public void afterTextChanged(Editable s) {
+            }
+        });
+    }
+
+    private void checkOraclePermission() {
+        View cvResolve = findViewById(R.id.cv_resolve_market);
+        if (cvResolve == null) return;
+
+        cvResolve.setVisibility(View.GONE);
+
+        repository.getOracleAddress(new Web3Repository.DataCallback<String>() {
+            @Override
+            public void onSuccess(String oracleAddress) {
+                String myAddress = repository.getWalletAddress();
+                if (myAddress != null && oracleAddress != null
+                        && myAddress.equalsIgnoreCase(oracleAddress)) {
+                    cvResolve.setVisibility(View.VISIBLE);
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                cvResolve.setVisibility(View.GONE);
+            }
         });
     }
 
@@ -269,9 +429,13 @@ public class MainActivity extends AppCompatActivity {
                     tvProfileBalance.setText(formattedBalance);
                 }
             }
+
             @Override
-            public void onError(String error) { }
+            public void onError(String error) {
+            }
         });
+
+        checkOraclePermission();
 
         binding.llLobbyContainer.removeAllViews();
         TextView loadingView = new TextView(this);
@@ -327,7 +491,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 🌟 核心修复 2：获取当前的毫秒级时间戳
         long currentMs = System.currentTimeMillis();
 
         for (Web3Repository.GameModel game : games) {
@@ -343,12 +506,16 @@ public class MainActivity extends AppCompatActivity {
             TextView tvTitle = itemView.findViewById(R.id.tv_item_game_title);
             TextView tvVolume = itemView.findViewById(R.id.tv_item_volume);
             TextView tvStatus = itemView.findViewById(R.id.tv_item_status);
+            ImageView ivAvatar = itemView.findViewById(R.id.iv_item_avatar);
             LinearLayout llOptions = itemView.findViewById(R.id.ll_options_container);
 
             tvTitle.setText("ID " + game.id + " | " + game.desc);
             tvVolume.setText("总交易量: " + formatWei(game.totalPool) + " BKC");
 
-            // 🌟 核心修复 3：使用毫秒进行对比
+            if (ivAvatar != null && game.avatarUrl != null) {
+                loadNetworkImage(game.avatarUrl, ivAvatar);
+            }
+
             boolean isExpired = currentMs > game.deadlineSec;
 
             if (game.isResolved) {
@@ -429,7 +596,7 @@ public class MainActivity extends AppCompatActivity {
                     BigDecimal amount = new BigDecimal(amountStr);
                     BigInteger wei = org.web3j.utils.Convert.toWei(amount, org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
                     Function f = new Function("stakeTokens", Arrays.asList(new Uint256(gameId), new Uint8(optionId)), Collections.emptyList());
-                    executeTx(wei, f, "质押成功，已上链确认！");
+                    executeTx(wei, f, "质押成功，已上链确认！", null);
                 } catch (Exception e) {
                     Toast.makeText(this, "输入的金额格式不正确", Toast.LENGTH_SHORT).show();
                 }
@@ -439,11 +606,12 @@ public class MainActivity extends AppCompatActivity {
         builder.show();
     }
 
-    private void executeTx(BigInteger value, Function f, String successMsg) {
+    private void executeTx(BigInteger value, Function f, String successMsg, MaterialButton restoreButton) {
         Toast.makeText(this, "⏳ 正在广播交易...", Toast.LENGTH_SHORT).show();
         repository.sendTransaction(value, f, successMsg, new Web3Repository.TxCallback() {
             @Override
-            public void onTxSent(String txHash) {}
+            public void onTxSent(String txHash) {
+            }
 
             @Override
             public void onConfirmed(String message) {
@@ -451,12 +619,25 @@ public class MainActivity extends AppCompatActivity {
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     syncData();
                     if (currentMode == ViewMode.CREATE) switchTab(ViewMode.HOME);
+                    if (restoreButton != null) {
+                        restoreButton.setEnabled(true);
+                        restoreButton.setText("签名并上链创建博弈");
+                        selectedImageUri = null;
+                        ImageView iv = findViewById(R.id.iv_selected_avatar);
+                        if (iv != null) {
+                            iv.setImageResource(android.R.drawable.ic_menu_camera);
+                        }
+                    }
                 }, 1000);
             }
 
             @Override
             public void onError(String error) {
                 Toast.makeText(MainActivity.this, getFriendlyErrorMessage(error), Toast.LENGTH_LONG).show();
+                if (restoreButton != null) {
+                    restoreButton.setEnabled(true);
+                    restoreButton.setText("签名并上链创建博弈");
+                }
             }
         });
     }

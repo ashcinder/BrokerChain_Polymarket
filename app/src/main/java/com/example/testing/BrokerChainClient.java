@@ -30,7 +30,7 @@ public class BrokerChainClient {
     // 统一配置服务器地址和端口
     private static final String BASE_URL = "https://dash.broker-chain.com:443/";
     // 全局合约地址（用于部分快捷接口的默认 To 地址）
-    public static String contractaddr = "0x9aeA171ea0e05DEd44D14ee87632648b0812B906";
+    public static String contractaddr = "0xa5C9AA42021FfE5DDa9717BFC3707fe21076aAdf";
 
     private static final Gson gson = new Gson();
 

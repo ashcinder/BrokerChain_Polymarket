@@ -1,379 +1,467 @@
 package com.example.testing;
 
+import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
-import android.util.Log;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextUtils;
+import android.text.TextWatcher;
+import android.view.Gravity;
 import android.view.View;
-import android.view.ViewParent;
-import android.widget.*;
+import android.view.ViewGroup;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
-import org.web3j.abi.*;
-import org.web3j.abi.datatypes.*;
-import org.web3j.abi.datatypes.generated.*;
-import org.web3j.crypto.Credentials;
-import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.methods.response.EthSendTransaction;
-import org.web3j.protocol.http.HttpService;
-import org.web3j.utils.Numeric;
+import com.example.testing.databinding.ActivityMainBinding;
+import com.github.mikephil.charting.charts.LineChart;
+import com.github.mikephil.charting.data.Entry;
+import com.github.mikephil.charting.data.LineData;
+import com.github.mikephil.charting.data.LineDataSet;
+import com.google.android.material.button.MaterialButton;
 
-import java.math.*;
+import org.web3j.abi.datatypes.DynamicArray;
+import org.web3j.abi.datatypes.Function;
+import org.web3j.abi.datatypes.Utf8String;
+import org.web3j.abi.datatypes.generated.Bytes32;
+import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.abi.datatypes.generated.Uint8;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.security.MessageDigest;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = "BrokerChainWallet";
+    private ActivityMainBinding binding;
+    private Web3Repository repository;
+    private List<Web3Repository.GameModel> allGamesList = new ArrayList<>();
+    private String privateKey;
 
-    // studio访问brokerchain本地节点
-    private static final String BROKER_CHAIN_URL = "http://10.0.2.2:42645";
+    private static final String CONTRACT_BYTECODE = "0x"; // <--- 填入你的 bytecode
 
-    // 私钥
-    private static final String PRIVATE_KEY = "ad5799695148adb16b3a31ef150ccaea7f9b4ed8308dceaa66e2e9a6e4133dbb";
+    private enum ViewMode {HOME, PORTFOLIO, CREATE, PROFILE}
 
-    // 合约地址
-    private static final String CONTRACT_ADDRESS = "0xA33910138F5F2483AAd1fDb5AB7729001e68CB0c";
+    private ViewMode currentMode = ViewMode.HOME;
 
-    // oracle地址
-    private static final String OFFICIAL_ORACLE_ADDRESS = "0xf672b5e97e653798b448920555bffbd67ded6534";
-
-    private Web3j web3j;
-    private Credentials credentials;
-    private TextView tvLog, tvWalletBalance, tvWalletAddress, tvLobbyGames, tvMyPositions;
-    private EditText etGameDesc, etStakeGameId, etStakeAmount, etResolveGameId, etClaimGameId;
-    private RadioGroup rgStakeOption, rgResolveOption;
-
-    // activity 入口方法
     @Override
-    protected void onCreate(Bundle savedInstanceState) { //Activity入口方法
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        initUI();
+        binding = ActivityMainBinding.inflate(getLayoutInflater());
+        setContentView(binding.getRoot());
 
-        web3j = Web3j.build(new HttpService(BROKER_CHAIN_URL));
-        credentials = Credentials.create(PRIVATE_KEY);
+        privateKey = getIntent().getStringExtra("PRIVATE_KEY");
+        if (privateKey == null) {
+            finish();
+            return;
+        }
 
-        log("📱 系统启动。当前身份: " + credentials.getAddress().substring(0, 10) + "...");
+        repository = new Web3Repository(privateKey);
+        setupNavigation();
+        setupProfile();
+        setupCreateTabLogic();
+        setupUI();
 
-        findViewById(R.id.btn_refresh_all).setOnClickListener(v -> syncData());
-        findViewById(R.id.btn_create_game).setOnClickListener(v -> createGame());
-        findViewById(R.id.btn_stake).setOnClickListener(v -> stakeTokens());
-        findViewById(R.id.btn_resolve).setOnClickListener(v -> resolveGame());
-        findViewById(R.id.btn_claim).setOnClickListener(v -> claimReward());
+        View cvResolve = findViewById(R.id.cv_resolve_market);
+        if (cvResolve != null) cvResolve.setVisibility(View.VISIBLE);
+    }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
         syncData();
-        runDiagnosticCheck();
     }
 
-    // 初始化UI界面
-    private void initUI() {
-        tvLog = findViewById(R.id.tv_log);
-        tvWalletBalance = findViewById(R.id.tv_wallet_balance);
-        tvWalletAddress = findViewById(R.id.tv_wallet_address);
-        tvLobbyGames = findViewById(R.id.tv_lobby_games);
-        tvMyPositions = findViewById(R.id.tv_my_positions);
-        etGameDesc = findViewById(R.id.et_game_desc);
-        etStakeGameId = findViewById(R.id.et_stake_game_id);
-        etStakeAmount = findViewById(R.id.et_stake_amount);
-        rgStakeOption = findViewById(R.id.rg_stake_option);
-        etResolveGameId = findViewById(R.id.et_resolve_game_id);
-        rgResolveOption = findViewById(R.id.rg_resolve_option);
-        etClaimGameId = findViewById(R.id.et_claim_game_id);
+    private String getFriendlyErrorMessage(String rawError) {
+        if (rawError == null) return "发生未知错误，请重试";
+        String lower = rawError.toLowerCase();
+        if (lower.contains("reverted")) return "交易被拒绝 (条件不满足，或池子已结算)";
+        if (lower.contains("insufficient funds")) return "您的 BKC 余额不足";
+        if (lower.contains("timeout") || lower.contains("network")) return "网络连接超时";
+        if (lower.contains("past deadline")) return "已超过预测截止时间";
+        return "链上交互失败: " + rawError;
     }
 
-    // 初始化时检测
-    private void runDiagnosticCheck() {
-        new Thread(() -> {
-            try {
-                Thread.sleep(1500);
-                logSafe("\n====== 🚨 系统底层诊断开始 ======");
-
-                BigInteger oracleBalance = web3j.ethGetBalance(OFFICIAL_ORACLE_ADDRESS, DefaultBlockParameterName.LATEST).send().getBalance();
-                if (oracleBalance.compareTo(BigInteger.ZERO) == 0) {
-                    logSafe("❌ 致命错误：预言机没钱支付 Gas 费！");
-                } else {
-                    logSafe("✅ 预言机资金充足。");
-                }
-
-                Function fOracle = new Function("officialOracle", Collections.emptyList(), Collections.singletonList(new TypeReference<Address>() {}));
-                String oracleHex = web3j.ethCall(org.web3j.protocol.core.methods.request.Transaction.createFunctionCallTransaction(
-                        credentials.getAddress(), null, null, null, CONTRACT_ADDRESS, BigInteger.ZERO,
-                        FunctionEncoder.encode(fOracle)), DefaultBlockParameterName.LATEST).send().getValue();
-
-                List<Type> res = FunctionReturnDecoder.decode(oracleHex, fOracle.getOutputParameters());
-                if (!res.isEmpty()) {
-                    String actualOracle = ((Address)res.get(0)).getValue();
-                    if (!actualOracle.equalsIgnoreCase(OFFICIAL_ORACLE_ADDRESS)) {
-                        logSafe("❌ 致命错误：合约法官是 [" + actualOracle + "]，与代码不匹配！");
-                    } else {
-                        logSafe("✅ 合约法官地址匹配。");
-                    }
-                }
-                logSafe("====== 诊断结束 ======\n");
-            } catch (Exception e) {
-                Log.e(TAG, "Diagnostic Error", e);
-                logSafe("⚠️ 诊断失败(网络未连接): " + e.getMessage());
-            }
-        }).start();
+    private void setupNavigation() {
+        binding.navHome.setOnClickListener(v -> switchTab(ViewMode.HOME));
+        binding.navPortfolio.setOnClickListener(v -> switchTab(ViewMode.PORTFOLIO));
+        binding.navCreate.setOnClickListener(v -> switchTab(ViewMode.CREATE));
+        binding.navProfile.setOnClickListener(v -> switchTab(ViewMode.PROFILE));
     }
 
-    // 专为 BrokerChain 定制的节点代签模式 (原样保留)
-    private void sendTx(BigInteger value, String data, String successMsg) {
-        new Thread(() -> {
-            try {
-                org.web3j.protocol.core.methods.request.Transaction tx =
-                        org.web3j.protocol.core.methods.request.Transaction.createFunctionCallTransaction(
-                                credentials.getAddress(),
-                                null,
-                                null,
-                                BigInteger.valueOf(3000000),
-                                CONTRACT_ADDRESS,
-                                value,
-                                data);
+    private void switchTab(ViewMode mode) {
+        currentMode = mode;
+        binding.viewHome.setVisibility((mode == ViewMode.HOME || mode == ViewMode.PORTFOLIO) ? View.VISIBLE : View.GONE);
+        binding.viewCreate.setVisibility(mode == ViewMode.CREATE ? View.VISIBLE : View.GONE);
+        binding.viewProfile.setVisibility(mode == ViewMode.PROFILE ? View.VISIBLE : View.GONE);
 
-                EthSendTransaction response = web3j.ethSendTransaction(tx).send();
+        if (mode == ViewMode.HOME) binding.tvTopTitle.setText("发现市场");
+        else if (mode == ViewMode.PORTFOLIO) binding.tvTopTitle.setText("我的持仓");
 
-                if (response.hasError()) {
-                    logSafe("❌ 节点拒绝: " + response.getError().getMessage());
-                    return;
-                }
+        int activeColor = 0xFF0052FF;
+        int inactiveColor = 0xFF64748B;
 
-                final String txHash = response.getTransactionHash();
-                if (txHash == null || txHash.isEmpty()) {
-                    logSafe("⚠️ 交易未产生 Hash");
-                    return;
-                }
+        binding.navHome.setTextColor(mode == ViewMode.HOME ? activeColor : inactiveColor);
+        binding.navPortfolio.setTextColor(mode == ViewMode.PORTFOLIO ? activeColor : inactiveColor);
+        binding.navCreate.setTextColor(mode == ViewMode.CREATE ? activeColor : inactiveColor);
+        binding.navProfile.setTextColor(mode == ViewMode.PROFILE ? activeColor : inactiveColor);
 
-                logSafe("⏳ 交易已发给节点，等待 PBFT 共识...\nHash: " + txHash.substring(0, 15) + "...");
-
-                boolean confirmed = false;
-                for (int i = 0; i < 15; i++) {
-                    Thread.sleep(2000);
-                    org.web3j.protocol.core.methods.response.EthGetTransactionReceipt receipt =
-                            web3j.ethGetTransactionReceipt(txHash).send();
-
-                    if (receipt.getTransactionReceipt().isPresent()) {
-                        String status = receipt.getTransactionReceipt().get().getStatus();
-                        if ("0x1".equalsIgnoreCase(status) || "0x01".equalsIgnoreCase(status)) {
-                            logSafe("🎉 " + successMsg);
-                            confirmed = true;
-                            break;
-                        } else {
-                            logSafe("❌ 执行失败 (EVM Reverted)");
-                            return;
-                        }
-                    }
-                }
-                if (!confirmed) logSafe("⏰ 确认超时");
-                Thread.sleep(1000);
-                syncData();
-            } catch (Exception e) {
-                Log.e(TAG, "Send TX Error", e);
-                logSafe("❌ 交易异常: " + e.getMessage());
-            }
-        }).start();
-    }
-
-    // ================= 【纯净新增：VDF 延迟计算引擎】 =================
-    private void computeVDFAndResolve(int gameId, int option, String seed) {
-        logSafe("\n⚙️ [VDF 引擎] 启动！开始进行可验证延迟计算...");
-
-        new Thread(() -> {
-            try {
-                long startTime = System.currentTimeMillis();
-                // 难度系数：50 万次连续哈希运算
-                int difficulty = 500_000;
-
-                MessageDigest digest = MessageDigest.getInstance("SHA-256");
-                byte[] hash = seed.getBytes();
-
-                for (int i = 0; i < difficulty; i++) {
-                    hash = digest.digest(hash);
-                    // 在 UI 打印进度条
-                    if (i % 100000 == 0 && i > 0) {
-                        int progress = (int) (((double) i / difficulty) * 100);
-                        logSafe("⏳ [VDF 引擎] 哈希计算中... " + progress + "%");
-                    }
-                }
-
-                long timeTaken = (System.currentTimeMillis() - startTime) / 1000;
-                String vdfProofHex = Numeric.toHexString(hash);
-
-                logSafe("✅ [VDF 引擎] 计算完成！耗时: " + timeTaken + " 秒");
-                logSafe("🔑 延迟证明: " + vdfProofHex.substring(0, 15) + "...");
-
-                // 将 VDF 结果提交上链
-                submitResolveWithVDF(gameId, option, hash);
-
-            } catch (Exception e) {
-                logSafe("❌ VDF 计算失败: " + e.getMessage());
-            }
-        }).start();
-    }
-
-    private void submitResolveWithVDF(int id, int opt, byte[] vdfProof) {
-        logSafe("📡 正在携带 VDF 证明发布开奖结果...");
-        try {
-            // 参数中加入了 VDF 的 bytes32 类型
-            Function f = new Function("resolveGame",
-                    Arrays.asList(new Uint256(id), new Uint8(opt), new Bytes32(vdfProof)),
-                    Collections.emptyList());
-            sendTx(BigInteger.ZERO, FunctionEncoder.encode(f), "结果宣布成功，状态已更新！");
-        } catch (Exception e) {
-            logSafe("❌ 打包异常: " + e.getMessage());
+        if (mode == ViewMode.HOME || mode == ViewMode.PORTFOLIO) {
+            filterGames(binding.etSearchBar.getText().toString());
         }
     }
-    // =================================================================
 
-    // 【修改：将 resolveGame 对接到 VDF 引擎】
-    private void resolveGame() {
-        if (etResolveGameId.getText().toString().isEmpty()) return;
-        int id = Integer.parseInt(etResolveGameId.getText().toString());
-        int opt = (rgResolveOption.getCheckedRadioButtonId() == R.id.rb_resolve_op1) ? 1 : 2;
+    private void setupProfile() {
+        String address = repository.getWalletAddress();
+        TextView tvAddress = findViewById(R.id.tv_profile_address);
+        if (tvAddress != null) tvAddress.setText(address);
+        String letter = address.length() > 2 ? address.substring(2, 3).toUpperCase() : "?";
+        TextView tvAvatar = findViewById(R.id.tv_avatar_letter);
+        if (tvAvatar != null) tvAvatar.setText(letter);
+        findViewById(R.id.btn_logout).setOnClickListener(v -> {
+            startActivity(new Intent(this, LoginActivity.class));
+            finish();
+        });
+        LineChart pnlChart = findViewById(R.id.chart_profile_pnl);
+        if (pnlChart != null) {
+            pnlChart.getDescription().setEnabled(false);
+            pnlChart.getLegend().setEnabled(false);
+            pnlChart.getAxisRight().setEnabled(false);
+            pnlChart.getXAxis().setDrawGridLines(false);
+            pnlChart.getXAxis().setDrawLabels(false);
+            pnlChart.getAxisLeft().setDrawGridLines(false);
+            pnlChart.getAxisLeft().setDrawLabels(false);
+            pnlChart.setTouchEnabled(false);
+            List<Entry> entries = new ArrayList<>();
+            float balance = 100f;
+            for (int i = 0; i < 20; i++) {
+                entries.add(new Entry(i, balance));
+                balance += (float) (Math.random() * 4 - 1);
+            }
+            LineDataSet dataSet = new LineDataSet(entries, "Asset");
+            dataSet.setColor(0xFF10B981);
+            dataSet.setLineWidth(3f);
+            dataSet.setDrawCircles(false);
+            dataSet.setDrawValues(false);
+            dataSet.setMode(LineDataSet.Mode.CUBIC_BEZIER);
+            dataSet.setDrawFilled(true);
+            dataSet.setFillColor(0xFF10B981);
+            dataSet.setFillAlpha(30);
+            pnlChart.setData(new LineData(dataSet));
+            pnlChart.invalidate();
+        }
+    }
 
-        // 生成不可预测的随机种子
-        String vdfSeed = "BrokerChain_Game_" + id + "_" + System.currentTimeMillis();
-        // 触发 VDF 延迟
-        computeVDFAndResolve(id, opt, vdfSeed);
+    private void setupCreateTabLogic() {
+        MaterialButton btnDeploy = findViewById(R.id.btn_deploy_game);
+        if (btnDeploy != null) {
+            btnDeploy.setOnClickListener(v -> {
+                String desc = ((EditText) findViewById(R.id.et_desc)).getText().toString().trim();
+                String cond = ((EditText) findViewById(R.id.et_condition)).getText().toString().trim();
+                String optsStr = ((EditText) findViewById(R.id.et_options)).getText().toString().trim();
+                String durationStr = ((EditText) findViewById(R.id.et_duration)).getText().toString().trim();
+
+                if (TextUtils.isEmpty(desc) || TextUtils.isEmpty(cond) || TextUtils.isEmpty(optsStr) || TextUtils.isEmpty(durationStr)) {
+                    Toast.makeText(this, "请完整填写所有发行信息", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                String[] optsArray = optsStr.split(",");
+                if (optsArray.length < 2) {
+                    Toast.makeText(this, "至少需要2个选项", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                // 🌟 核心修复 1：将持续时间转换为毫秒 (乘以 60 * 1000)
+                long durationMs = Long.parseLong(durationStr) * 60 * 1000;
+
+                List<Utf8String> utf8List = new ArrayList<>();
+                for (String s : optsArray) utf8List.add(new Utf8String(s.trim()));
+                DynamicArray<Utf8String> web3jOptions = new DynamicArray<>(Utf8String.class, utf8List);
+
+                Function f = new Function("createGame", Arrays.asList(
+                        new Utf8String(desc), new Utf8String(cond), web3jOptions, new Uint256(durationMs) // 传入毫秒
+                ), Collections.emptyList());
+
+                executeTx(BigInteger.ZERO, f, "🎉 预测池发行成功！");
+            });
+        }
+
+        MaterialButton btnResolve = findViewById(R.id.btn_resolve_game);
+        if (btnResolve != null) {
+            btnResolve.setOnClickListener(v -> {
+                String gameIdStr = ((EditText) findViewById(R.id.et_game_id)).getText().toString().trim();
+                String winOptStr = ((EditText) findViewById(R.id.et_winning_opt)).getText().toString().trim();
+
+                if (TextUtils.isEmpty(gameIdStr) || TextUtils.isEmpty(winOptStr)) {
+                    Toast.makeText(this, "请输入要清算的博弈池ID及获胜选项", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                int gameId = Integer.parseInt(gameIdStr);
+                int winOpt = Integer.parseInt(winOptStr);
+
+                Toast.makeText(this, "⚙️ 正在计算证明...", Toast.LENGTH_LONG).show();
+                btnResolve.setEnabled(false);
+                btnResolve.setText("处理中...");
+
+                AppExecutors.getInstance().computeIO().execute(() -> {
+                    try {
+                        String seed = "BrokerChain_" + gameId + "_" + System.currentTimeMillis();
+                        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                        byte[] hash = seed.getBytes();
+                        for (int i = 0; i < 500_000; i++) hash = digest.digest(hash);
+                        byte[] finalHash = hash;
+
+                        AppExecutors.getInstance().mainThread().execute(() -> {
+                            btnResolve.setEnabled(true);
+                            btnResolve.setText("执行预言机决议广播");
+                            Function f = new Function("resolveGame", Arrays.asList(
+                                    new Uint256(gameId), new Uint8(winOpt), new Bytes32(finalHash)
+                            ), Collections.emptyList());
+                            executeTx(BigInteger.ZERO, f, "✅ 预言机开奖决议已上链！");
+                        });
+                    } catch (Exception e) {
+                        AppExecutors.getInstance().mainThread().execute(() -> {
+                            btnResolve.setEnabled(true);
+                            btnResolve.setText("执行预言机决议广播");
+                            Toast.makeText(this, "计算失败", Toast.LENGTH_SHORT).show();
+                        });
+                    }
+                });
+            });
+        }
+    }
+
+    private void setupUI() {
+        binding.etSearchBar.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                filterGames(s.toString());
+            }
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
     }
 
     private void syncData() {
-        new Thread(() -> {
-            try {
-                BigInteger balance = web3j.ethGetBalance(credentials.getAddress(), DefaultBlockParameterName.LATEST).send().getBalance();
-                BigDecimal bkc = org.web3j.utils.Convert.fromWei(new BigDecimal(balance), org.web3j.utils.Convert.Unit.ETHER);
-                runOnUiThread(() -> {
-                    tvWalletBalance.setText("余额: " + bkc.setScale(4, RoundingMode.HALF_UP) + " BKC");
-                    tvWalletAddress.setText("地址: " + credentials.getAddress());
-                });
-                refreshLobbyAndPositionsSafe();
-            } catch (Exception e) {
-                Log.e(TAG, "Sync Error", e);
-                logSafe("❌ 同步异常: " + e.getMessage());
+        repository.getBalance(new Web3Repository.DataCallback<BigDecimal>() {
+            @Override
+            public void onSuccess(BigDecimal bkc) {
+                String formattedBalance = bkc.setScale(2, RoundingMode.HALF_UP).toString();
+                binding.tvWalletBalanceTop.setText(formattedBalance + " BKC");
+                TextView tvProfileBalance = findViewById(R.id.tv_profile_total_balance);
+                if (tvProfileBalance != null) {
+                    tvProfileBalance.setText(formattedBalance);
+                }
             }
-        }).start();
-    }
+            @Override
+            public void onError(String error) { }
+        });
 
-    private void refreshLobbyAndPositionsSafe() {
-        try {
-            Function fCount = new Function("gameCount", Collections.emptyList(), Collections.singletonList(new TypeReference<Uint256>() {}));
-            String countHex = web3j.ethCall(org.web3j.protocol.core.methods.request.Transaction.createFunctionCallTransaction(credentials.getAddress(), null, null, null, CONTRACT_ADDRESS, BigInteger.ZERO, FunctionEncoder.encode(fCount)), DefaultBlockParameterName.LATEST).send().getValue();
-            if (countHex == null || countHex.equals("0x")) return;
-            int count = ((Uint256) FunctionReturnDecoder.decode(countHex, fCount.getOutputParameters()).get(0)).getValue().intValue();
+        binding.llLobbyContainer.removeAllViews();
+        TextView loadingView = new TextView(this);
+        loadingView.setText("正在同步链上合约数据...");
+        loadingView.setGravity(Gravity.CENTER);
+        loadingView.setPadding(0, 50, 0, 50);
+        loadingView.setTextColor(0xFF64748B);
+        binding.llLobbyContainer.addView(loadingView);
 
-            StringBuilder lobby = new StringBuilder();
-            StringBuilder pos = new StringBuilder();
-
-            for (int i = 1; i <= count; i++) {
-                Function fGame = new Function("games", Collections.singletonList(new Uint256(i)),
-                        Arrays.asList(new TypeReference<Uint256>(){}, new TypeReference<Address>(){}, new TypeReference<Utf8String>(){},
-                                new TypeReference<Uint256>(){}, new TypeReference<Uint256>(){}, new TypeReference<Bool>(){}, new TypeReference<Uint8>(){}, new TypeReference<Uint256>(){}));
-                String gameHex = web3j.ethCall(org.web3j.protocol.core.methods.request.Transaction.createFunctionCallTransaction(credentials.getAddress(), null, null, null, CONTRACT_ADDRESS, BigInteger.ZERO, FunctionEncoder.encode(fGame)), DefaultBlockParameterName.LATEST).send().getValue();
-                List<Type> res = FunctionReturnDecoder.decode(gameHex, fGame.getOutputParameters());
-                if (res.isEmpty()) continue;
-
-                String desc = ((Utf8String)res.get(2)).getValue();
-                BigInteger p1 = ((Uint256)res.get(3)).getValue();
-                BigInteger p2 = ((Uint256)res.get(4)).getValue();
-                boolean isRes = ((Bool)res.get(5)).getValue();
-
-                lobby.append("ID: ").append(i).append(" ").append(desc).append("\n")
-                        .append(isRes ? "【已开奖🔒】" : "【进行中🟢】")
-                        .append(" ").append(calculateOdds(p1, p2)).append("\n")
-                        .append("池1: ").append(formatWei(p1)).append(" | 池2: ").append(formatWei(p2))
-                        .append("\n---\n");
-
-                BigInteger s1 = getStake(i, 1);
-                BigInteger s2 = getStake(i, 2);
-                if (s1.signum() > 0 || s2.signum() > 0) {
-                    pos.append("博弈 #").append(i).append(": ")
-                            .append(s1.signum() > 0 ? "押1(" + formatWei(s1) + ") " : "")
-                            .append(s2.signum() > 0 ? "押2(" + formatWei(s2) + ") " : "")
-                            .append("\n");
+        repository.getGames(new Web3Repository.DataCallback<List<Web3Repository.GameModel>>() {
+            @Override
+            public void onSuccess(List<Web3Repository.GameModel> games) {
+                allGamesList = games;
+                if (currentMode == ViewMode.HOME || currentMode == ViewMode.PORTFOLIO) {
+                    filterGames(binding.etSearchBar.getText().toString());
                 }
             }
 
-            runOnUiThread(() -> {
-                tvLobbyGames.setText(lobby.length() > 0 ? lobby.toString() : "暂无博弈局");
-                tvMyPositions.setText(pos.length() > 0 ? pos.toString() : "暂无个人持仓");
+            @Override
+            public void onError(String error) {
+                Toast.makeText(MainActivity.this, getFriendlyErrorMessage(error), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void filterGames(String query) {
+        List<Web3Repository.GameModel> filtered = new ArrayList<>();
+        for (Web3Repository.GameModel game : allGamesList) {
+            if (currentMode == ViewMode.PORTFOLIO) {
+                boolean invested = false;
+                for (BigInteger s : game.myStakes) {
+                    if (s.signum() > 0) invested = true;
+                }
+                if (!invested) continue;
+            }
+            if (query.isEmpty() || game.desc.toLowerCase().contains(query.toLowerCase())) {
+                filtered.add(game);
+            }
+        }
+        renderDynamicLobby(filtered);
+    }
+
+    private void renderDynamicLobby(List<Web3Repository.GameModel> games) {
+        binding.llLobbyContainer.removeAllViews();
+
+        if (games.isEmpty()) {
+            TextView emptyView = new TextView(this);
+            emptyView.setText(currentMode == ViewMode.PORTFOLIO ? "您目前没有参与任何交易" : "暂无符合条件的市场");
+            emptyView.setGravity(Gravity.CENTER);
+            emptyView.setPadding(0, 100, 0, 100);
+            emptyView.setTextColor(0xFF94A3B8);
+            binding.llLobbyContainer.addView(emptyView);
+            return;
+        }
+
+        // 🌟 核心修复 2：获取当前的毫秒级时间戳
+        long currentMs = System.currentTimeMillis();
+
+        for (Web3Repository.GameModel game : games) {
+            View itemView = getLayoutInflater().inflate(R.layout.item_game, binding.llLobbyContainer, false);
+
+            itemView.setOnClickListener(v -> {
+                Intent intent = new Intent(MainActivity.this, GameDetailActivity.class);
+                intent.putExtra("PRIVATE_KEY", privateKey);
+                intent.putExtra("GAME_ID", game.id);
+                startActivity(intent);
             });
-        } catch (Exception e) {
-            Log.e(TAG, "Refresh Error", e);
-            logSafe("⚠️ 刷新大厅失败: " + e.getMessage());
+
+            TextView tvTitle = itemView.findViewById(R.id.tv_item_game_title);
+            TextView tvVolume = itemView.findViewById(R.id.tv_item_volume);
+            TextView tvStatus = itemView.findViewById(R.id.tv_item_status);
+            LinearLayout llOptions = itemView.findViewById(R.id.ll_options_container);
+
+            tvTitle.setText("ID " + game.id + " | " + game.desc);
+            tvVolume.setText("总交易量: " + formatWei(game.totalPool) + " BKC");
+
+            // 🌟 核心修复 3：使用毫秒进行对比
+            boolean isExpired = currentMs > game.deadlineSec;
+
+            if (game.isResolved) {
+                String winnerName = game.winningOption < game.optionNames.size() ? game.optionNames.get(game.winningOption) : "未知";
+                tvStatus.setText("✅ 已决议: " + winnerName);
+                tvStatus.setTextColor(0xFF10B981);
+            } else if (game.isRefunded) {
+                tvStatus.setText("↩️ 超时已流局");
+                tvStatus.setTextColor(0xFFEF4444);
+            } else if (isExpired) {
+                tvStatus.setText("⏳ 等待预言机输入");
+                tvStatus.setTextColor(0xFFF59E0B);
+            } else {
+                tvStatus.setText("🟢 交易进行中");
+                tvStatus.setTextColor(0xFF0052FF);
+            }
+
+            for (int i = 0; i < game.optionCount; i++) {
+                int optionId = i;
+                String realOptName = (i < game.optionNames.size()) ? game.optionNames.get(i) : "选项 " + optionId;
+                BigInteger poolSize = game.optionPools.get(i);
+                BigInteger myStake = game.myStakes.get(i);
+
+                LinearLayout optLayout = new LinearLayout(this);
+                optLayout.setOrientation(LinearLayout.HORIZONTAL);
+                optLayout.setGravity(Gravity.CENTER_VERTICAL);
+                optLayout.setPadding(32, 24, 32, 24);
+
+                if (i % 2 == 1) optLayout.setBackgroundColor(0xFFF8FAFC);
+
+                TextView tvOptName = new TextView(this);
+                tvOptName.setText(realOptName + (myStake.signum() > 0 ? " (已投: " + formatWei(myStake) + ")" : ""));
+                tvOptName.setTextColor(0xFF1E293B);
+                tvOptName.setTextSize(14);
+                tvOptName.setTypeface(null, android.graphics.Typeface.BOLD);
+                tvOptName.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+                MaterialButton btnBuy = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
+                btnBuy.setText("质押 · 池 " + formatWei(poolSize));
+                btnBuy.setTextColor(0xFF0052FF);
+                btnBuy.setStrokeColorResource(android.R.color.transparent);
+                btnBuy.setBackgroundColor(0xFFEFF6FF);
+                btnBuy.setCornerRadius(12);
+                btnBuy.setMinimumHeight(0);
+                btnBuy.setMinHeight(0);
+                btnBuy.setPadding(30, 10, 30, 10);
+
+                if (game.isResolved || game.isRefunded || isExpired) {
+                    btnBuy.setEnabled(false);
+                    btnBuy.setBackgroundColor(0xFFF1F5F9);
+                    btnBuy.setTextColor(0xFF94A3B8);
+                    btnBuy.setText("停止交易");
+                } else {
+                    btnBuy.setOnClickListener(v -> showStakeDialog(game.id, optionId, realOptName));
+                }
+
+                optLayout.addView(tvOptName);
+                optLayout.addView(btnBuy);
+                llOptions.addView(optLayout);
+            }
+            binding.llLobbyContainer.addView(itemView);
         }
     }
 
-    private String calculateOdds(BigInteger p1, BigInteger p2) {
-        if (p1.add(p2).signum() == 0) return "(赔率 1:1)";
-        BigDecimal b1 = new BigDecimal(p1);
-        BigDecimal b2 = new BigDecimal(p2);
-        BigDecimal total = b1.add(b2);
-        String r1 = b1.signum() > 0 ? total.divide(b1, 2, RoundingMode.HALF_UP).toString() : "∞";
-        String r2 = b2.signum() > 0 ? total.divide(b2, 2, RoundingMode.HALF_UP).toString() : "∞";
-        return "赔率 (1赔" + r1 + " / 2赔" + r2 + ")";
+    private void showStakeDialog(int gameId, int optionId, String optName) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("确认交易策略");
+        builder.setMessage("您正在质押：\n[" + optName + "]\n\n请输入投入的 BKC 数量:");
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setPadding(50, 40, 50, 40);
+        builder.setView(input);
+
+        builder.setPositiveButton("签名并广播", (dialog, which) -> {
+            String amountStr = input.getText().toString();
+            if (!amountStr.isEmpty()) {
+                try {
+                    BigDecimal amount = new BigDecimal(amountStr);
+                    BigInteger wei = org.web3j.utils.Convert.toWei(amount, org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
+                    Function f = new Function("stakeTokens", Arrays.asList(new Uint256(gameId), new Uint8(optionId)), Collections.emptyList());
+                    executeTx(wei, f, "质押成功，已上链确认！");
+                } catch (Exception e) {
+                    Toast.makeText(this, "输入的金额格式不正确", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    private void executeTx(BigInteger value, Function f, String successMsg) {
+        Toast.makeText(this, "⏳ 正在广播交易...", Toast.LENGTH_SHORT).show();
+        repository.sendTransaction(value, f, successMsg, new Web3Repository.TxCallback() {
+            @Override
+            public void onTxSent(String txHash) {}
+
+            @Override
+            public void onConfirmed(String message) {
+                Toast.makeText(MainActivity.this, message + " (正在等待区块确认...)", Toast.LENGTH_LONG).show();
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    syncData();
+                    if (currentMode == ViewMode.CREATE) switchTab(ViewMode.HOME);
+                }, 1000);
+            }
+
+            @Override
+            public void onError(String error) {
+                Toast.makeText(MainActivity.this, getFriendlyErrorMessage(error), Toast.LENGTH_LONG).show();
+            }
+        });
     }
 
     private String formatWei(BigInteger wei) {
-        return org.web3j.utils.Convert.fromWei(new BigDecimal(wei), org.web3j.utils.Convert.Unit.ETHER)
-                .setScale(2, RoundingMode.HALF_UP).toString() + " BKC";
-    }
-
-    private BigInteger getStake(int id, int opt) throws Exception {
-        Function f = new Function("stakes",
-                Arrays.asList(new Uint256(id), new Address(credentials.getAddress()), new Uint8(opt)),
-                Collections.singletonList(new TypeReference<Uint256>() {}));
-        String resHex = web3j.ethCall(org.web3j.protocol.core.methods.request.Transaction.createFunctionCallTransaction(
-                credentials.getAddress(), null, null, null, CONTRACT_ADDRESS, BigInteger.ZERO,
-                FunctionEncoder.encode(f)), DefaultBlockParameterName.LATEST).send().getValue();
-        List<Type> res = FunctionReturnDecoder.decode(resHex, f.getOutputParameters());
-        return res.isEmpty() ? BigInteger.ZERO : ((Uint256) res.get(0)).getValue();
-    }
-
-    private void createGame() {
-        logSafe("📡 准备创建博弈池...");
-        Function f = new Function("createGame", Collections.singletonList(new Utf8String(etGameDesc.getText().toString())), Collections.emptyList());
-        sendTx(BigInteger.ZERO, FunctionEncoder.encode(f), "创建博弈成功");
-    }
-
-    private void stakeTokens() {
-        logSafe("📡 准备质押...");
-        try {
-            int id = Integer.parseInt(etStakeGameId.getText().toString());
-            BigDecimal amount = new BigDecimal(etStakeAmount.getText().toString());
-            BigInteger wei = org.web3j.utils.Convert.toWei(amount, org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
-            int opt = (rgStakeOption.getCheckedRadioButtonId() == R.id.rb_stake_op1) ? 1 : 2;
-            Function f = new Function("stakeTokens", Arrays.asList(new Uint256(id), new Uint8(opt)), Collections.emptyList());
-            sendTx(wei, FunctionEncoder.encode(f), "质押成功");
-        } catch (NumberFormatException e) {
-            logSafe("❌ 输入金额或 ID 格式错误");
-        }
-    }
-
-    private void claimReward() {
-        logSafe("📡 准备提现清算...");
-        try {
-            int id = Integer.parseInt(etClaimGameId.getText().toString());
-            Function f = new Function("claimReward", Collections.singletonList(new Uint256(id)), Collections.emptyList());
-            sendTx(BigInteger.ZERO, FunctionEncoder.encode(f), "清算成功");
-        } catch (NumberFormatException e) {
-            logSafe("❌ 输入的清算 ID 错误");
-        }
-    }
-
-    private void logSafe(String m) {
-        runOnUiThread(() -> log(m));
-    }
-
-    // (原样保留，安全滚动逻辑)
-    private void log(String m) {
-        tvLog.append("\n> " + m);
-        ViewParent cp = tvLog.getParent();
-        while (cp != null && !(cp instanceof ScrollView)) {
-            cp = cp.getParent();
-        }
-        if (cp instanceof ScrollView) {
-            final ScrollView sv = (ScrollView) cp;
-            sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
-        }
+        return org.web3j.utils.Convert.fromWei(new BigDecimal(wei), org.web3j.utils.Convert.Unit.ETHER).setScale(1, RoundingMode.HALF_UP).toString();
     }
 }

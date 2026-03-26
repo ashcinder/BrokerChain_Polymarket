@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
+    <color name="pm_bg">#FFFFFF</color>
+    <color name="pm_surface">#F8FAFC</color>
+    <color name="pm_border">#E2E8F0</color>
+    <color name="pm_primary">#2563EB</color>
+    <color name="pm_text_main">#0F172A</color>
+    <color name="pm_text_secondary">#64748B</color>
+    <color name="pm_success">#10B981</color>
+    <color name="pm_warning">#F59E0B</color>
 </resources>

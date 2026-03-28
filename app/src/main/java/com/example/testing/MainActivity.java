@@ -39,7 +39,6 @@ import org.json.JSONObject;
 import org.web3j.abi.datatypes.DynamicArray;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Utf8String;
-import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.generated.Uint8;
 
@@ -52,13 +51,18 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Scanner;
 
+/**
+ * 【DApp 主控台】
+ * 作用：整个应用的核心 Activity。
+ * 负责底部导航栏的切换，展示"发现市场"、"我的持仓"、"发行博弈池"、"个人中心"四个维度的视图。
+ * 已经将繁重的预言机业务剥离给了 OracleDaemonManager。
+ */
 public class MainActivity extends AppCompatActivity {
 
     private ActivityMainBinding binding;
@@ -72,6 +76,9 @@ public class MainActivity extends AppCompatActivity {
 
     private Uri selectedImageUri = null;
     private ActivityResultLauncher<Intent> imagePickerLauncher;
+
+    // 🌟 独立的预言机管理器
+    private OracleDaemonManager oracleManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,7 +95,6 @@ public class MainActivity extends AppCompatActivity {
         repository = new Web3Repository(privateKey);
 
         initImagePicker();
-
         setupNavigation();
         setupProfile();
         setupCreateTabLogic();
@@ -99,6 +105,15 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         syncData();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 销毁 App 时，务必掐断预言机后台心跳，防止内存泄漏
+        if (oracleManager != null) {
+            oracleManager.destroy();
+        }
     }
 
     private void initImagePicker() {
@@ -126,7 +141,6 @@ public class MainActivity extends AppCompatActivity {
                 baos.write(buffer, 0, len);
             }
             byte[] bytes = baos.toByteArray();
-            // 🚨 核心修复：必须使用 NO_WRAP 模式，禁止加入任何换行符！
             return Base64.encodeToString(bytes, Base64.NO_WRAP);
         } catch (Exception e) {
             return null;
@@ -165,6 +179,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void switchTab(ViewMode mode) {
         currentMode = mode;
+
         binding.viewHome.setVisibility((mode == ViewMode.HOME || mode == ViewMode.PORTFOLIO) ? View.VISIBLE : View.GONE);
         binding.viewCreate.setVisibility(mode == ViewMode.CREATE ? View.VISIBLE : View.GONE);
         binding.viewProfile.setVisibility(mode == ViewMode.PROFILE ? View.VISIBLE : View.GONE);
@@ -189,13 +204,16 @@ public class MainActivity extends AppCompatActivity {
         String address = repository.getWalletAddress();
         TextView tvAddress = findViewById(R.id.tv_profile_address);
         if (tvAddress != null) tvAddress.setText(address);
+
         String letter = address.length() > 2 ? address.substring(2, 3).toUpperCase() : "?";
         TextView tvAvatar = findViewById(R.id.tv_avatar_letter);
         if (tvAvatar != null) tvAvatar.setText(letter);
+
         findViewById(R.id.btn_logout).setOnClickListener(v -> {
             startActivity(new Intent(this, LoginActivity.class));
             finish();
         });
+
         LineChart pnlChart = findViewById(R.id.chart_profile_pnl);
         if (pnlChart != null) {
             pnlChart.getDescription().setEnabled(false);
@@ -206,6 +224,7 @@ public class MainActivity extends AppCompatActivity {
             pnlChart.getAxisLeft().setDrawGridLines(false);
             pnlChart.getAxisLeft().setDrawLabels(false);
             pnlChart.setTouchEnabled(false);
+
             List<Entry> entries = new ArrayList<>();
             float balance = 100f;
             for (int i = 0; i < 20; i++) {
@@ -257,6 +276,7 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 long durationMs = Long.parseLong(durationStr) * 60 * 1000;
+
                 List<Utf8String> utf8List = new ArrayList<>();
                 for (String s : optsArray) utf8List.add(new Utf8String(s.trim()));
                 DynamicArray<Utf8String> web3jOptions = new DynamicArray<>(Utf8String.class, utf8List);
@@ -282,7 +302,6 @@ public class MainActivity extends AppCompatActivity {
                         conn.setRequestMethod("POST");
                         conn.setDoOutput(true);
 
-                        // 🚨 核心修复：显式告诉 ImgBB 我们的数据格式是 URL 编码的表单
                         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
 
                         String postData = "key=" + imgbbApiKey + "&image=" + URLEncoder.encode(base64Image, "UTF-8");
@@ -299,6 +318,7 @@ public class MainActivity extends AppCompatActivity {
 
                             AppExecutors.getInstance().mainThread().execute(() -> {
                                 btnDeploy.setText("图片上传成功，正在上链...");
+
                                 Function f = new Function("createGame", Arrays.asList(
                                         new Utf8String(desc), new Utf8String(cond), new Utf8String(uploadedUrl),
                                         new Utf8String(detailInfo), web3jOptions, new Uint256(durationMs)
@@ -307,7 +327,6 @@ public class MainActivity extends AppCompatActivity {
                                 executeTx(BigInteger.ZERO, f, "🎉 预测池发行成功！", btnDeploy);
                             });
                         } else {
-                            // 🚨 新增排错：如果服务器拒绝，把真正原因打印到 Logcat 中
                             InputStream errorStream = conn.getErrorStream();
                             if (errorStream != null) {
                                 Scanner scanner = new Scanner(errorStream, "UTF-8").useDelimiter("\\A");
@@ -316,7 +335,7 @@ public class MainActivity extends AppCompatActivity {
                             }
 
                             runOnUiThread(() -> {
-                                Toast.makeText(this, "图片上传被拒" , Toast.LENGTH_SHORT).show();
+                                Toast.makeText(this, "图片上传被拒 ", Toast.LENGTH_SHORT).show();
                                 btnDeploy.setEnabled(true);
                                 btnDeploy.setText("签名并上链创建博弈");
                             });
@@ -332,49 +351,50 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
-        MaterialButton btnResolve = findViewById(R.id.btn_resolve_game);
-        if (btnResolve != null) {
-            btnResolve.setOnClickListener(v -> {
-                String gameIdStr = ((EditText) findViewById(R.id.et_game_id)).getText().toString().trim();
-                String winOptStr = ((EditText) findViewById(R.id.et_winning_opt)).getText().toString().trim();
-
-                if (TextUtils.isEmpty(gameIdStr) || TextUtils.isEmpty(winOptStr)) {
-                    Toast.makeText(this, "请输入要清算的博弈池ID及获胜选项", Toast.LENGTH_SHORT).show();
-                    return;
+        // === 🌟 使用解耦后的预言机自动化引擎 ===
+        MaterialButton btnToggleOracle = findViewById(R.id.btn_toggle_oracle);
+        if (btnToggleOracle != null) {
+            // 实例化管理器，传入 repository、提供数据的 Lambda 表达式、以及处理 UI 回调的接口
+            oracleManager = new OracleDaemonManager(repository, () -> allGamesList, new OracleDaemonManager.OracleCallback() {
+                @Override
+                public void onLogAppended(String msg) {
+                    TextView tvLog = findViewById(R.id.tv_oracle_log);
+                    if (tvLog == null) return;
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
+                    String timeStr = sdf.format(new java.util.Date());
+                    String newLog = "[" + timeStr + "] " + msg + "\n" + tvLog.getText().toString();
+                    if (newLog.length() > 2000) newLog = newLog.substring(0, 2000); // 防内存溢出
+                    tvLog.setText(newLog);
                 }
 
-                int gameId = Integer.parseInt(gameIdStr);
-                int winOpt = Integer.parseInt(winOptStr);
-
-                Toast.makeText(this, "⚙️ 正在计算证明...", Toast.LENGTH_LONG).show();
-                btnResolve.setEnabled(false);
-                btnResolve.setText("处理中...");
-
-                AppExecutors.getInstance().computeIO().execute(() -> {
-                    try {
-                        String seed = "BrokerChain_" + gameId + "_" + System.currentTimeMillis();
-                        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-                        byte[] hash = seed.getBytes();
-                        for (int i = 0; i < 500_000; i++) hash = digest.digest(hash);
-                        byte[] finalHash = hash;
-
-                        AppExecutors.getInstance().mainThread().execute(() -> {
-                            btnResolve.setEnabled(true);
-                            btnResolve.setText("执行预言机决议广播");
-                            Function f = new Function("resolveGame", Arrays.asList(
-                                    new Uint256(gameId), new Uint8(winOpt), new Bytes32(finalHash)
-                            ), Collections.emptyList());
-                            executeTx(BigInteger.ZERO, f, "✅ 预言机开奖决议已上链！", null);
-                        });
-                    } catch (Exception e) {
-                        AppExecutors.getInstance().mainThread().execute(() -> {
-                            btnResolve.setEnabled(true);
-                            btnResolve.setText("执行预言机决议广播");
-                            Toast.makeText(this, "计算失败", Toast.LENGTH_SHORT).show();
-                        });
+                @Override
+                public void onStatusChanged(boolean isRunning) {
+                    TextView tvStatus = findViewById(R.id.tv_oracle_status_indicator);
+                    if (isRunning) {
+                        btnToggleOracle.setText("停止自动化引擎");
+                        btnToggleOracle.setBackgroundColor(0xFFEF4444);
+                        if (tvStatus != null) {
+                            tvStatus.setText("🟢 运行中");
+                            tvStatus.setTextColor(0xFF10B981);
+                        }
+                    } else {
+                        btnToggleOracle.setText("启动自动化轮询与抓取");
+                        btnToggleOracle.setBackgroundColor(0xFF0052FF);
+                        if (tvStatus != null) {
+                            tvStatus.setText("🔴 已停止");
+                            tvStatus.setTextColor(0xFF94A3B8);
+                        }
                     }
-                });
+                }
+
+                @Override
+                public void onResolveSuccess() {
+                    syncData(); // 预言机成功开奖后，让主页面重新拉取最新的大盘数据
+                }
             });
+
+            // 按钮点击时，只管触发管理器的 toggle 方法
+            btnToggleOracle.setOnClickListener(v -> oracleManager.toggleDaemon());
         }
     }
 
@@ -584,6 +604,7 @@ public class MainActivity extends AppCompatActivity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("确认交易策略");
         builder.setMessage("您正在质押：\n[" + optName + "]\n\n请输入投入的 BKC 数量:");
+
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         input.setPadding(50, 40, 50, 40);
@@ -616,9 +637,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onConfirmed(String message) {
                 Toast.makeText(MainActivity.this, message + " (正在等待区块确认...)", Toast.LENGTH_LONG).show();
+
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     syncData();
-                    if (currentMode == ViewMode.CREATE) switchTab(ViewMode.HOME);
+                    if (currentMode == ViewMode.CREATE)
+                        switchTab(ViewMode.HOME);
+
                     if (restoreButton != null) {
                         restoreButton.setEnabled(true);
                         restoreButton.setText("签名并上链创建博弈");

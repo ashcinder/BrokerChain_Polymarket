@@ -241,11 +241,11 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:background="#F8FAFC"
+                                android:clickable="true"
+                                android:focusable="true"
                                 android:gravity="center_vertical"
                                 android:orientation="horizontal"
-                                android:padding="14dp"
-                                android:clickable="true"
-                                android:focusable="true">
+                                android:padding="14dp">
 
                                 <ImageView
                                     android:id="@+id/iv_selected_avatar"
@@ -324,9 +324,9 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:visibility="gone"
-                        app:cardBackgroundColor="#FEF2F2"
+                        app:cardBackgroundColor="#1E293B"
                         app:cardCornerRadius="12dp"
-                        app:strokeColor="#FECACA"
+                        app:strokeColor="#334155"
                         app:strokeWidth="2dp">
 
                         <LinearLayout
@@ -335,43 +335,59 @@
                             android:orientation="vertical"
                             android:padding="16dp">
 
-                            <TextView
-                                android:layout_width="wrap_content"
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginBottom="12dp"
-                                android:text="⚠️ 官方预言机清算终端"
-                                android:textColor="#B91C1C"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
 
-                            <EditText
-                                android:id="@+id/et_game_id"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:background="#FFFFFF"
-                                android:hint="目标博弈池 ID (数字)"
-                                android:inputType="number"
-                                android:padding="12dp"
-                                android:textSize="14sp" />
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🤖 预言机自动化引擎"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold" />
 
-                            <EditText
-                                android:id="@+id/et_winning_opt"
+                                <View
+                                    android:layout_width="0dp"
+                                    android:layout_height="0dp"
+                                    android:layout_weight="1" />
+
+                                <TextView
+                                    android:id="@+id/tv_oracle_status_indicator"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🔴 已停止"
+                                    android:textColor="#94A3B8"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <ScrollView
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="12dp"
-                                android:background="#FFFFFF"
-                                android:hint="获胜选项编号 (1, 2, 3...)"
-                                android:inputType="number"
-                                android:padding="12dp"
-                                android:textSize="14sp" />
+                                android:layout_height="120dp"
+                                android:background="#0F172A"
+                                android:padding="8dp">
+
+                                <TextView
+                                    android:id="@+id/tv_oracle_log"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="[System] 等待引擎启动...\n"
+                                    android:textColor="#10B981"
+                                    android:textSize="12sp" />
+                            </ScrollView>
 
                             <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_resolve_game"
+                                android:id="@+id/btn_toggle_oracle"
                                 android:layout_width="match_parent"
                                 android:layout_height="50dp"
                                 android:layout_marginTop="16dp"
-                                android:text="执行 VDF 零知识证明广播"
-                                app:backgroundTint="#EF4444"
+                                android:text="启动自动化轮询与抓取"
+                                app:backgroundTint="#0052FF"
                                 app:cornerRadius="8dp" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>

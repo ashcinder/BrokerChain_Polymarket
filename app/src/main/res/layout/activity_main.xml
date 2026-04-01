@@ -146,49 +146,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
-                        android:text="1. 系统初始化 (部署协议主合约)"
-                        android:textColor="#64748B"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.card.MaterialCardView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="24dp"
-                        app:cardBackgroundColor="#F8FAFC"
-                        app:cardCornerRadius="12dp"
-                        app:strokeColor="#CBD5E1"
-                        app:strokeWidth="1dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:padding="16dp">
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginBottom="12dp"
-                                android:text="此操作将把 PredictionMarket.sol 智能合约字节码部署到中心服务器节点上。获取新地址后，请更新至代码中。"
-                                android:textColor="#475569"
-                                android:textSize="13sp" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_deploy_protocol"
-                                android:layout_width="match_parent"
-                                android:layout_height="50dp"
-                                android:text="部署核心智能合约"
-                                app:backgroundTint="#0052FF"
-                                app:cornerRadius="8dp" />
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="8dp"
-                        android:text="2. 业务操作 (创建新的博弈池)"
+                        android:text="创建新的博弈池"
                         android:textColor="#64748B"
                         android:textSize="14sp"
                         android:textStyle="bold" />
@@ -367,7 +325,7 @@
 
                             <ScrollView
                                 android:layout_width="match_parent"
-                                android:layout_height="120dp"
+                                android:layout_height="300dp"
                                 android:background="#0F172A"
                                 android:padding="8dp">
 

@@ -20,7 +20,7 @@ public class LoginActivity extends AppCompatActivity {
     private ActivityLoginBinding binding;
 
     // 默认测试私钥（硬编码）
-    private static final String DEFAULT_PK = "ad5799695148adb16b3a31ef150ccaea7f9b4ed8308dceaa66e2e9a6e4133dbb";
+    private static final String DEFAULT_PK = "91d2b0df57b76eee51a7b3f4bda39ec53813968fbf9f8e04033f3c4e9ba4cb2f";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

@@ -28,7 +28,7 @@ public class Web3Repository {
     private static final String TAG = "Web3Repository";
 
     // ⚠️ 极其重要：当前在网络上负责处理 PredictionMarket 逻辑的主智能合约的内存地址
-    private static final String CONTRACT_ADDRESS = "0xa5C9AA42021FfE5DDa9717BFC3707fe21076aAdf";
+    private static final String CONTRACT_ADDRESS = "0x9123eeF54ED3AC1C0FA0D610e1E44c83D05f76E2";
 
     // 核心对象：钱包身份凭证，包含由私钥推导出来的以太坊账户地址
     private final Credentials credentials;
@@ -199,110 +199,99 @@ public class Web3Repository {
     }
 
     /**
-     * 【极其关键的性能优化接口】获取所有博弈池大盘数据
-     * 背景：如果采用传统思路，拉取列表里的 N 个池子，每个池子里有 M 个选项的资金池，共需要发起 1 + N + N*M 次独立的网络 RPC 请求。
-     * 解决：我们在 Solidity 中通过一个定制的结构体打包返回，这里通过对包含数组的返回进行解码，实现了 N+1 到仅需发送 2 组网络调用的极限降维打击。
+     * 【极其关键的性能优化接口】获取博弈池大盘数据 (加入截断加载机制)
      */
     @SuppressWarnings("unchecked")
     public void getGames(DataCallback<List<GameModel>> callback) {
         AppExecutors.getInstance().networkIO().execute(() -> {
             try {
-                // 第一步：先获取当前总共有多少个游戏池建立成功 (gameCount)
-                Function fCount = new Function("gameCount", Collections.emptyList(), Collections.singletonList(new TypeReference<Uint256>() {
-                }));
+                // 第一步：获取当前总共有多少个游戏池
+                Function fCount = new Function("gameCount", Collections.emptyList(), Collections.singletonList(new TypeReference<Uint256>() {}));
                 String countHex = ethCall(fCount);
                 if (countHex == null || countHex.equals("0x")) {
                     AppExecutors.getInstance().mainThread().execute(() -> callback.onSuccess(new ArrayList<>()));
                     return;
                 }
-                // 解码 Uint256
-                int count = ((Uint256) FunctionReturnDecoder.decode(countHex, fCount.getOutputParameters()).get(0)).getValue().intValue();
 
-                List<GameModel> list = new ArrayList<>();
+                int totalCount = ((Uint256) FunctionReturnDecoder.decode(countHex, fCount.getOutputParameters()).get(0)).getValue().intValue();
 
-                // 第二步：开始根据索引 ID 从 1 开始逐个拉取池子信息
-                for (int i = 1; i <= count; i++) {
-                    try {
-                        // 构建一个巨型的 Web3j 拦截器，捕获我们在 Solidity 新写的包含 11 个参数的基础信息返回值
-                        Function fInfo = new Function("getGameInfo", Collections.singletonList(new Uint256(i)),
-                                Arrays.asList(
-                                        new TypeReference<Utf8String>() {
-                                        }, new TypeReference<Utf8String>() {
-                                        },
-                                        new TypeReference<Utf8String>() {
-                                        }, new TypeReference<Utf8String>() {
-                                        },
-                                        new TypeReference<DynamicArray<Utf8String>>() {
-                                        }, new TypeReference<Uint8>() {
-                                        },
-                                        new TypeReference<Uint256>() {
-                                        }, new TypeReference<Bool>() {
-                                        },
-                                        new TypeReference<Uint8>() {
-                                        }, new TypeReference<Uint256>() {
-                                        },
-                                        new TypeReference<Bool>() {
-                                        }
-                                ));
+                // 🌟 核心优化 2：数据截断。只拉取最新发行的 10 个池子，拒绝全量拉取引发的网络拥堵
+                int startIndex = Math.max(1, totalCount - 9);
+                int fetchCount = totalCount - startIndex + 1;
 
-                        String infoHex = ethCall(fInfo);
-                        if (infoHex == null || infoHex.equals("0x")) continue;
+                List<GameModel> list = Collections.synchronizedList(new ArrayList<>());
+                java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(fetchCount);
 
-                        // 开始对一大串 16 进制字符串进行拆解分离
-                        List<Type> res = FunctionReturnDecoder.decode(infoHex, fInfo.getOutputParameters());
-                        if (res.isEmpty()) continue;
+                // 第二步：并发拉取最新的几个池子
+                for (int i = startIndex; i <= totalCount; i++) {
+                    final int gameId = i;
+                    AppExecutors.getInstance().networkIO().execute(() -> {
+                        try {
+                            Function fInfo = new Function("getGameInfo", Collections.singletonList(new Uint256(gameId)),
+                                    Arrays.asList(
+                                            new TypeReference<Utf8String>() {}, new TypeReference<Utf8String>() {},
+                                            new TypeReference<Utf8String>() {}, new TypeReference<Utf8String>() {},
+                                            new TypeReference<DynamicArray<Utf8String>>() {}, new TypeReference<Uint8>() {},
+                                            new TypeReference<Uint256>() {}, new TypeReference<Bool>() {},
+                                            new TypeReference<Uint8>() {}, new TypeReference<Uint256>() {},
+                                            new TypeReference<Bool>() {}
+                                    ));
 
-                        GameModel model = new GameModel();
-                        model.id = i;
-                        model.desc = ((Utf8String) res.get(0)).getValue();
-                        model.condition = ((Utf8String) res.get(1)).getValue();
-                        model.avatarUrl = ((Utf8String) res.get(2)).getValue();
-                        model.detailedInfo = ((Utf8String) res.get(3)).getValue();
+                            String infoHex = ethCall(fInfo);
+                            if (infoHex != null && !infoHex.equals("0x")) {
+                                List<Type> res = FunctionReturnDecoder.decode(infoHex, fInfo.getOutputParameters());
+                                if (!res.isEmpty()) {
+                                    GameModel model = new GameModel();
+                                    model.id = gameId;
+                                    model.desc = ((Utf8String) res.get(0)).getValue();
+                                    model.condition = ((Utf8String) res.get(1)).getValue();
+                                    model.avatarUrl = ((Utf8String) res.get(2)).getValue();
+                                    model.detailedInfo = ((Utf8String) res.get(3)).getValue();
 
-                        // ⚠️ 在以太坊解析 DynamicArray (动态大小字符串数组)
-                        List<Utf8String> namesList = ((DynamicArray<Utf8String>) res.get(4)).getValue();
-                        model.optionNames = new ArrayList<>();
-                        for (Utf8String u : namesList) model.optionNames.add(u.getValue());
+                                    List<Utf8String> namesList = ((DynamicArray<Utf8String>) res.get(4)).getValue();
+                                    model.optionNames = new ArrayList<>();
+                                    for (Utf8String u : namesList) model.optionNames.add(u.getValue());
 
-                        model.optionCount = ((Uint8) res.get(5)).getValue().intValue();
-                        model.totalPool = ((Uint256) res.get(6)).getValue();
-                        model.isResolved = ((Bool) res.get(7)).getValue();
-                        model.winningOption = ((Uint8) res.get(8)).getValue().intValue();
-                        model.deadlineSec = ((Uint256) res.get(9)).getValue().longValue();
-                        model.isRefunded = ((Bool) res.get(10)).getValue();
+                                    model.optionCount = ((Uint8) res.get(5)).getValue().intValue();
+                                    model.totalPool = ((Uint256) res.get(6)).getValue();
+                                    model.isResolved = ((Bool) res.get(7)).getValue();
+                                    model.winningOption = ((Uint8) res.get(8)).getValue().intValue();
+                                    model.deadlineSec = ((Uint256) res.get(9)).getValue().longValue();
+                                    model.isRefunded = ((Bool) res.get(10)).getValue();
 
-                        // 第三步：二次调用获取额外聚合的深层数组数据（各个选项的盘子大小和自身账户购买记录）
-                        Function fExtra = new Function("getGameExtraData",
-                                Arrays.asList(new Uint256(i), new Address(credentials.getAddress())),
-                                Arrays.asList(
-                                        new TypeReference<DynamicArray<Uint256>>() {
-                                        },
-                                        new TypeReference<DynamicArray<Uint256>>() {
-                                        }
-                                ));
+                                    Function fExtra = new Function("getGameExtraData",
+                                            Arrays.asList(new Uint256(gameId), new Address(credentials.getAddress())),
+                                            Arrays.asList(
+                                                    new TypeReference<DynamicArray<Uint256>>() {},
+                                                    new TypeReference<DynamicArray<Uint256>>() {}
+                                            ));
 
-                        String extraHex = ethCall(fExtra);
-                        List<Type> extraRes = FunctionReturnDecoder.decode(extraHex, fExtra.getOutputParameters());
+                                    String extraHex = ethCall(fExtra);
+                                    List<Type> extraRes = FunctionReturnDecoder.decode(extraHex, fExtra.getOutputParameters());
 
-                        List<Uint256> poolsArray = ((DynamicArray<Uint256>) extraRes.get(0)).getValue();
-                        List<Uint256> stakesArray = ((DynamicArray<Uint256>) extraRes.get(1)).getValue();
+                                    List<Uint256> poolsArray = ((DynamicArray<Uint256>) extraRes.get(0)).getValue();
+                                    List<Uint256> stakesArray = ((DynamicArray<Uint256>) extraRes.get(1)).getValue();
 
-                        model.optionPools = new ArrayList<>();
-                        model.myStakes = new ArrayList<>();
+                                    model.optionPools = new ArrayList<>();
+                                    model.myStakes = new ArrayList<>();
 
-                        // 循环读取并添加进数据模型
-                        for (int opt = 0; opt < model.optionCount; opt++) {
-                            model.optionPools.add(poolsArray.get(opt).getValue());
-                            model.myStakes.add(stakesArray.get(opt).getValue());
+                                    for (int opt = 0; opt < model.optionCount; opt++) {
+                                        model.optionPools.add(poolsArray.get(opt).getValue());
+                                        model.myStakes.add(stakesArray.get(opt).getValue());
+                                    }
+                                    list.add(model);
+                                }
+                            }
+                        } catch (Exception gameEx) {
+                            Log.e(TAG, "解析博弈池 " + gameId + " 时出现异常", gameEx);
+                        } finally {
+                            latch.countDown(); // 保证无论成功失败都能释放锁
                         }
-
-                        list.add(model);
-                    } catch (Exception gameEx) {
-                        Log.e(TAG, "解析博弈池 " + i + " 时出现异常，已跳过", gameEx);
-                    }
+                    });
                 }
-                // 通过翻转让最新建立的 ID 的元素排在数组最前端呈现给使用者
-                Collections.reverse(list);
+
+                latch.await(); // 阻塞等待这一批次的数据全部加载完
+                Collections.reverse(list); // 翻转使得最新的在最上方
                 AppExecutors.getInstance().mainThread().execute(() -> callback.onSuccess(list));
             } catch (Exception e) {
                 postError(callback, e.getMessage());

@@ -513,7 +513,14 @@ public class MainActivity extends AppCompatActivity {
 
         long currentMs = System.currentTimeMillis();
 
+        // 🌟 核心优化 3：UI 渲染截断。主界面的 ScrollView 极度消耗性能，最多只允许渲染 10 个视图块
+        int renderLimit = 10;
+        int renderCount = 0;
+
         for (Web3Repository.GameModel game : games) {
+            if (renderCount >= renderLimit) break;
+            renderCount++;
+
             View itemView = getLayoutInflater().inflate(R.layout.item_game, binding.llLobbyContainer, false);
 
             itemView.setOnClickListener(v -> {
@@ -573,7 +580,7 @@ public class MainActivity extends AppCompatActivity {
                 tvOptName.setTypeface(null, android.graphics.Typeface.BOLD);
                 tvOptName.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-                MaterialButton btnBuy = new MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
+                com.google.android.material.button.MaterialButton btnBuy = new com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
                 btnBuy.setText("质押 · 池 " + formatWei(poolSize));
                 btnBuy.setTextColor(0xFF0052FF);
                 btnBuy.setStrokeColorResource(android.R.color.transparent);

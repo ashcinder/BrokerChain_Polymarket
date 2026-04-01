@@ -57,12 +57,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Scanner;
 
-/**
- * 【DApp 主控台】
- * 作用：整个应用的核心 Activity。
- * 负责底部导航栏的切换，展示"发现市场"、"我的持仓"、"发行博弈池"、"个人中心"四个维度的视图。
- * 已经将繁重的预言机业务剥离给了 OracleDaemonManager。
- */
 public class MainActivity extends AppCompatActivity {
 
     private ActivityMainBinding binding;
@@ -76,8 +70,6 @@ public class MainActivity extends AppCompatActivity {
 
     private Uri selectedImageUri = null;
     private ActivityResultLauncher<Intent> imagePickerLauncher;
-
-    // 🌟 独立的预言机管理器
     private OracleDaemonManager oracleManager;
 
     @Override
@@ -110,7 +102,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // 销毁 App 时，务必掐断预言机后台心跳，防止内存泄漏
         if (oracleManager != null) {
             oracleManager.destroy();
         }
@@ -301,7 +292,6 @@ public class MainActivity extends AppCompatActivity {
                         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                         conn.setRequestMethod("POST");
                         conn.setDoOutput(true);
-
                         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
 
                         String postData = "key=" + imgbbApiKey + "&image=" + URLEncoder.encode(base64Image, "UTF-8");
@@ -327,13 +317,6 @@ public class MainActivity extends AppCompatActivity {
                                 executeTx(BigInteger.ZERO, f, "🎉 预测池发行成功！", btnDeploy);
                             });
                         } else {
-                            InputStream errorStream = conn.getErrorStream();
-                            if (errorStream != null) {
-                                Scanner scanner = new Scanner(errorStream, "UTF-8").useDelimiter("\\A");
-                                String errorBody = scanner.hasNext() ? scanner.next() : "未知错误";
-                                android.util.Log.e("UploadError", "ImgBB 拒绝了请求: " + errorBody);
-                            }
-
                             runOnUiThread(() -> {
                                 Toast.makeText(this, "图片上传被拒 ", Toast.LENGTH_SHORT).show();
                                 btnDeploy.setEnabled(true);
@@ -351,10 +334,8 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
-        // === 🌟 使用解耦后的预言机自动化引擎 ===
         MaterialButton btnToggleOracle = findViewById(R.id.btn_toggle_oracle);
         if (btnToggleOracle != null) {
-            // 实例化管理器，传入 repository、提供数据的 Lambda 表达式、以及处理 UI 回调的接口
             oracleManager = new OracleDaemonManager(repository, () -> allGamesList, new OracleDaemonManager.OracleCallback() {
                 @Override
                 public void onLogAppended(String msg) {
@@ -363,7 +344,7 @@ public class MainActivity extends AppCompatActivity {
                     java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
                     String timeStr = sdf.format(new java.util.Date());
                     String newLog = "[" + timeStr + "] " + msg + "\n" + tvLog.getText().toString();
-                    if (newLog.length() > 2000) newLog = newLog.substring(0, 2000); // 防内存溢出
+                    if (newLog.length() > 2000) newLog = newLog.substring(0, 2000);
                     tvLog.setText(newLog);
                 }
 
@@ -389,11 +370,10 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onResolveSuccess() {
-                    syncData(); // 预言机成功开奖后，让主页面重新拉取最新的大盘数据
+                    syncData();
                 }
             });
 
-            // 按钮点击时，只管触发管理器的 toggle 方法
             btnToggleOracle.setOnClickListener(v -> oracleManager.toggleDaemon());
         }
     }
@@ -401,8 +381,7 @@ public class MainActivity extends AppCompatActivity {
     private void setupUI() {
         binding.etSearchBar.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -410,8 +389,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void afterTextChanged(Editable s) {
-            }
+            public void afterTextChanged(Editable s) {}
         });
     }
 
@@ -430,7 +408,6 @@ public class MainActivity extends AppCompatActivity {
                     cvResolve.setVisibility(View.VISIBLE);
                 }
             }
-
             @Override
             public void onError(String error) {
                 cvResolve.setVisibility(View.GONE);
@@ -449,10 +426,8 @@ public class MainActivity extends AppCompatActivity {
                     tvProfileBalance.setText(formattedBalance);
                 }
             }
-
             @Override
-            public void onError(String error) {
-            }
+            public void onError(String error) {}
         });
 
         checkOraclePermission();
@@ -486,7 +461,7 @@ public class MainActivity extends AppCompatActivity {
         for (Web3Repository.GameModel game : allGamesList) {
             if (currentMode == ViewMode.PORTFOLIO) {
                 boolean invested = false;
-                for (BigInteger s : game.myStakes) {
+                for (BigInteger s : game.myShares) {
                     if (s.signum() > 0) invested = true;
                 }
                 if (!invested) continue;
@@ -512,8 +487,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         long currentMs = System.currentTimeMillis();
-
-        // 🌟 核心优化 3：UI 渲染截断。主界面的 ScrollView 极度消耗性能，最多只允许渲染 10 个视图块
         int renderLimit = 10;
         int renderCount = 0;
 
@@ -560,71 +533,90 @@ public class MainActivity extends AppCompatActivity {
                 tvStatus.setTextColor(0xFF0052FF);
             }
 
+// == 替换 MainActivity.java 里的内层循环 ==
             for (int i = 0; i < game.optionCount; i++) {
                 int optionId = i;
                 String realOptName = (i < game.optionNames.size()) ? game.optionNames.get(i) : "选项 " + optionId;
-                BigInteger poolSize = game.optionPools.get(i);
-                BigInteger myStake = game.myStakes.get(i);
 
-                LinearLayout optLayout = new LinearLayout(this);
-                optLayout.setOrientation(LinearLayout.HORIZONTAL);
-                optLayout.setGravity(Gravity.CENTER_VERTICAL);
-                optLayout.setPadding(32, 24, 32, 24);
+                BigInteger virtualReserve = game.virtualReserves.get(i);
+                BigInteger myShares = game.myShares.get(i);
 
-                if (i % 2 == 1) optLayout.setBackgroundColor(0xFFF8FAFC);
+                // 计算胜率，为了让主界面的迷你卡片也显示准确价格
+                BigDecimal totalVirtualBd = BigDecimal.ZERO;
+                for (int v = 0; v < game.optionCount; v++) {
+                    totalVirtualBd = totalVirtualBd.add(new BigDecimal(game.virtualReserves.get(v)));
+                }
+                float prob = 0f;
+                if (totalVirtualBd.compareTo(BigDecimal.ZERO) > 0) {
+                    prob = new BigDecimal(virtualReserve).divide(totalVirtualBd, 4, RoundingMode.HALF_UP).floatValue() * 100;
+                }
+                float priceYes = prob / 100f;
+                float priceNo = 1f - priceYes;
 
-                TextView tvOptName = new TextView(this);
-                tvOptName.setText(realOptName + (myStake.signum() > 0 ? " (已投: " + formatWei(myStake) + ")" : ""));
-                tvOptName.setTextColor(0xFF1E293B);
-                tvOptName.setTextSize(14);
-                tvOptName.setTypeface(null, android.graphics.Typeface.BOLD);
-                tvOptName.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                // 挂载新的精美 XML 模板
+                View rowView = getLayoutInflater().inflate(R.layout.item_option_row, llOptions, false);
 
-                com.google.android.material.button.MaterialButton btnBuy = new com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
-                btnBuy.setText("质押 · 池 " + formatWei(poolSize));
-                btnBuy.setTextColor(0xFF0052FF);
-                btnBuy.setStrokeColorResource(android.R.color.transparent);
-                btnBuy.setBackgroundColor(0xFFEFF6FF);
-                btnBuy.setCornerRadius(12);
-                btnBuy.setMinimumHeight(0);
-                btnBuy.setMinHeight(0);
-                btnBuy.setPadding(30, 10, 30, 10);
+                // 去掉主页面列表过多的内边距，使其更紧凑
+                rowView.setPadding(0, 16, 0, 16);
 
-                if (game.isResolved || game.isRefunded || isExpired) {
-                    btnBuy.setEnabled(false);
-                    btnBuy.setBackgroundColor(0xFFF1F5F9);
-                    btnBuy.setTextColor(0xFF94A3B8);
-                    btnBuy.setText("停止交易");
-                } else {
-                    btnBuy.setOnClickListener(v -> showStakeDialog(game.id, optionId, realOptName));
+                TextView tvOptName = rowView.findViewById(R.id.tv_row_opt_name);
+                TextView tvOptShares = rowView.findViewById(R.id.tv_row_opt_shares);
+                TextView tvProb = rowView.findViewById(R.id.tv_row_prob);
+                MaterialButton btnBuyYes = rowView.findViewById(R.id.btn_row_buy_yes);
+                MaterialButton btnBuyNo = rowView.findViewById(R.id.btn_row_buy_no);
+
+                tvOptName.setText(realOptName);
+                tvProb.setText(String.format("%.0f%%", prob));
+
+                if (myShares.signum() > 0) {
+                    tvOptShares.setVisibility(View.VISIBLE);
+                    tvOptShares.setText("已持有: " + formatWei(myShares) + " 份");
                 }
 
-                optLayout.addView(tvOptName);
-                optLayout.addView(btnBuy);
-                llOptions.addView(optLayout);
-            }
-            binding.llLobbyContainer.addView(itemView);
+                btnBuyYes.setText(String.format("Yes %.2f", priceYes));
+                btnBuyNo.setText(String.format("No %.2f", priceNo));
+
+                if (game.isResolved || game.isRefunded || isExpired) {
+                    btnBuyYes.setEnabled(false);
+                    btnBuyNo.setEnabled(false);
+                    btnBuyYes.setBackgroundColor(0xFFF1F5F9);
+                    btnBuyNo.setBackgroundColor(0xFFF1F5F9);
+                } else {
+                    // 主界面点击统一跳转到详情页即可，不直接在这里做复杂交互，保持层级清晰
+                    View.OnClickListener jumpToDetail = v -> {
+                        Intent intent = new Intent(MainActivity.this, GameDetailActivity.class);
+                        intent.putExtra("PRIVATE_KEY", privateKey);
+                        intent.putExtra("GAME_ID", game.id);
+                        startActivity(intent);
+                    };
+                    btnBuyYes.setOnClickListener(jumpToDetail);
+                    btnBuyNo.setOnClickListener(jumpToDetail);
+                }
+
+                llOptions.addView(rowView);
+            }            binding.llLobbyContainer.addView(itemView);
         }
     }
 
     private void showStakeDialog(int gameId, int optionId, String optName) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("确认交易策略");
-        builder.setMessage("您正在质押：\n[" + optName + "]\n\n请输入投入的 BKC 数量:");
+        builder.setMessage("您正在以动态市场价购买：\n[" + optName + "] 的条件代币份额\n\n请输入愿意投入的 BKC 数量:");
 
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         input.setPadding(50, 40, 50, 40);
         builder.setView(input);
 
-        builder.setPositiveButton("签名并广播", (dialog, which) -> {
+        builder.setPositiveButton("签名并购买", (dialog, which) -> {
             String amountStr = input.getText().toString();
             if (!amountStr.isEmpty()) {
                 try {
                     BigDecimal amount = new BigDecimal(amountStr);
                     BigInteger wei = org.web3j.utils.Convert.toWei(amount, org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
-                    Function f = new Function("stakeTokens", Arrays.asList(new Uint256(gameId), new Uint8(optionId)), Collections.emptyList());
-                    executeTx(wei, f, "质押成功，已上链确认！", null);
+                    // 🌟 核心：这里调用 AMM 机制的新方法名 buyShares
+                    Function f = new Function("buyShares", Arrays.asList(new Uint256(gameId), new Uint8(optionId)), Collections.emptyList());
+                    executeTx(wei, f, "购买成功，已为您铸造对应份额！", null);
                 } catch (Exception e) {
                     Toast.makeText(this, "输入的金额格式不正确", Toast.LENGTH_SHORT).show();
                 }
@@ -638,8 +630,7 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "⏳ 正在广播交易...", Toast.LENGTH_SHORT).show();
         repository.sendTransaction(value, f, successMsg, new Web3Repository.TxCallback() {
             @Override
-            public void onTxSent(String txHash) {
-            }
+            public void onTxSent(String txHash) {}
 
             @Override
             public void onConfirmed(String message) {
@@ -647,17 +638,14 @@ public class MainActivity extends AppCompatActivity {
 
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     syncData();
-                    if (currentMode == ViewMode.CREATE)
-                        switchTab(ViewMode.HOME);
+                    if (currentMode == ViewMode.CREATE) switchTab(ViewMode.HOME);
 
                     if (restoreButton != null) {
                         restoreButton.setEnabled(true);
                         restoreButton.setText("签名并上链创建博弈");
                         selectedImageUri = null;
                         ImageView iv = findViewById(R.id.iv_selected_avatar);
-                        if (iv != null) {
-                            iv.setImageResource(android.R.drawable.ic_menu_camera);
-                        }
+                        if (iv != null) iv.setImageResource(android.R.drawable.ic_menu_camera);
                     }
                 }, 1000);
             }

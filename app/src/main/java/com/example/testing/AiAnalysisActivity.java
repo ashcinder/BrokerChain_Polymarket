@@ -33,7 +33,7 @@ public class AiAnalysisActivity extends AppCompatActivity {
     private EditText etInput;
     private ImageButton btnSend;
 
-    // ⚠️ 极其重要：请在这里填入你去 DeepSeek 开放平台申请的 API KEY
+    // ⚠️ 极其重要：你的 DeepSeek API KEY
     private static final String DEEPSEEK_API_KEY = "sk-679c615e26234c67b00677ba689a80d8";
     private static final String API_URL = "https://api.deepseek.com/chat/completions";
 
@@ -52,11 +52,24 @@ public class AiAnalysisActivity extends AppCompatActivity {
 
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
 
-        // 设定 AI 的系统人设 (System Prompt)
+        // ==========================================
+        // 🌟 核心升级：为 DeepSeek 注入 Polymarket / AMM 专用的投研人设 (System Prompt)
+        // ==========================================
         try {
             JSONObject systemMsg = new JSONObject();
             systemMsg.put("role", "system");
-            systemMsg.put("content", "你是一个资深的 Web3 和预测市场(Prediction Market)分析师。请用专业、客观、且通俗易懂的中文，根据用户提供的市场数据给出你的投资分析和判断。回答尽量精简。");
+
+            // 构建极其专业的 DeFi 预测市场分析师人设
+            String systemPrompt = "你是一个资深的 Web3 去中心化金融(DeFi)与预测市场(如 Polymarket)的投研分析师。\n" +
+                    "你精通 AMM(自动做市商)机制、恒定乘积公式、条件代币(Conditional Tokens)以及隐含概率(Implied Probability)的定价逻辑。\n" +
+                    "接下来，用户会发送一个预测市场的盘口数据（包含主题、规则、总资金池、各选项的虚拟储备量和当前胜率/价格）。\n" +
+                    "请结合现实世界的宏观背景、新闻动态，给出专业的投资建议。你的回答必须包含：\n" +
+                    "1. 盘口分析：当前各选项的价格(隐含胜率)是否合理反映了现实世界发生的概率？\n" +
+                    "2. 基本面研判：简述影响该事件走向的核心因素。\n" +
+                    "3. 交易策略：明确指出哪个选项（如 Buy Yes 或 Buy No）存在预期收益率(EV)的套利空间，或者是否被市场情绪高估/低估，并提示流动性风险。\n" +
+                    "要求：排版清晰（严格使用 Markdown 多级标题），专业客观，通俗易懂，直击痛点。";
+
+            systemMsg.put("content", systemPrompt);
             messageHistory.put(systemMsg);
         } catch (Exception e) {
             e.printStackTrace();
@@ -69,7 +82,7 @@ public class AiAnalysisActivity extends AppCompatActivity {
             addMessageToUI(initialPrompt, true);
             callDeepSeekApi(initialPrompt);
         } else {
-            addMessageToUI("你好！我是 DeepSeek 投研助手。请问你想分析哪个预测市场？", false);
+            addMessageToUI("你好！我是专注 AMM 预测市场的 DeepSeek 投研助手。请问你想分析哪个盘口？", false);
         }
 
         // 发送按钮点击事件
@@ -118,7 +131,7 @@ public class AiAnalysisActivity extends AppCompatActivity {
         View loadingBubble = getLayoutInflater().inflate(R.layout.item_chat_bubble, llChatContainer, false);
         loadingBubble.findViewById(R.id.ll_ai_message).setVisibility(View.VISIBLE);
         TextView tvLoading = loadingBubble.findViewById(R.id.tv_ai_text);
-        tvLoading.setText("正在深度思考分析中...");
+        tvLoading.setText("正在基于 AMM 模型进行深度推演...");
         llChatContainer.addView(loadingBubble);
         svChat.post(() -> svChat.fullScroll(View.FOCUS_DOWN));
 
@@ -145,6 +158,8 @@ public class AiAnalysisActivity extends AppCompatActivity {
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setRequestProperty("Accept", "application/json");
                 conn.setRequestProperty("Authorization", "Bearer " + DEEPSEEK_API_KEY);
+                conn.setConnectTimeout(10000); // 增加网络超时时间，防止大模型响应过慢导致崩溃
+                conn.setReadTimeout(30000);
                 conn.setDoOutput(true);
 
                 try (OutputStream os = conn.getOutputStream()) {
@@ -206,21 +221,14 @@ public class AiAnalysisActivity extends AppCompatActivity {
 
         String html = markdown;
 
-        // --- 核心修正点：处理多级标题 ---
-        // 🚨 这里采用了“多行模式(?m)”，并使用“匹配行首^”和“匹配行尾$”的锚点
-        // 注意匹配顺序：必须从最长的标题级数(H3)开始匹配，防止误伤（如果先匹配 # 就会把 ### 当成 #）
-
         // 1. 处理三级标题 (### 文字) -> 将文字放大并加粗 (模拟 <h3> 效果)
-        // 答辩高分技巧：这里利用 HTML 标签组装 Spanned 对象，实现了不引入第三方库就改变原生的 TextView 字体大小和颜色
-        html = html.replaceAll("(?m)^###\\s+(.*)$", "<h3><font color='#0052FF'>$1</font></h3>"); // H3 级标题设为蓝色，更显眼
+        html = html.replaceAll("(?m)^###\\s+(.*)$", "<h3><font color='#0052FF'>$1</font></h3>");
 
         // 2. 处理二级标题 (## 文字) -> (模拟 <h2> 效果)
         html = html.replaceAll("(?m)^##\\s+(.*)$", "<h2>$1</h2>");
 
         // 3. 处理一级标题 (# 文字) -> (模拟 <h1> 效果)
         html = html.replaceAll("(?m)^#\\s+(.*)$", "<h1>$1</h1>");
-
-        // --- 保持之前的逻辑 ---
 
         // 处理加粗: 将 **文字** 替换为 <b>文字</b>
         html = html.replaceAll("\\*\\*(.*?)\\*\\*", "<b>$1</b>");
@@ -232,7 +240,6 @@ public class AiAnalysisActivity extends AppCompatActivity {
         html = html.replace("\n", "<br>");
 
         // 调用 Android 原生 Html 解析引擎渲染文本
-        // Android SDK >= 24 (Nougat) 引入了新的 Flag，我们做一下兼容
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             return android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_COMPACT);
         } else {

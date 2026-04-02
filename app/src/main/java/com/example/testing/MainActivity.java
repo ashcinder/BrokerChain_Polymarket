@@ -336,6 +336,16 @@ public class MainActivity extends AppCompatActivity {
 
         MaterialButton btnToggleOracle = findViewById(R.id.btn_toggle_oracle);
         if (btnToggleOracle != null) {
+
+            // 🌟 解决滑动冲突：找到黑框 ScrollView，当手指摸到它时，禁止外层页面拦截滑动事件
+            android.widget.ScrollView svOracleLog = findViewById(R.id.sv_oracle_log);
+            if (svOracleLog != null) {
+                svOracleLog.setOnTouchListener((v, event) -> {
+                    v.getParent().requestDisallowInterceptTouchEvent(true);
+                    return false;
+                });
+            }
+
             oracleManager = new OracleDaemonManager(repository, () -> allGamesList, new OracleDaemonManager.OracleCallback() {
                 @Override
                 public void onLogAppended(String msg) {
@@ -344,7 +354,9 @@ public class MainActivity extends AppCompatActivity {
                     java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
                     String timeStr = sdf.format(new java.util.Date());
                     String newLog = "[" + timeStr + "] " + msg + "\n" + tvLog.getText().toString();
-                    if (newLog.length() > 2000) newLog = newLog.substring(0, 2000);
+
+                    // 🌟 解除封印：把 2000 放宽到 15000 字符，保留详尽的预言机交互和 AI 核查历史
+                    if (newLog.length() > 15000) newLog = newLog.substring(0, 15000);
                     tvLog.setText(newLog);
                 }
 

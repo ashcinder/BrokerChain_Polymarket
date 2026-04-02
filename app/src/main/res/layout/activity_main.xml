@@ -324,6 +324,7 @@
                             </LinearLayout>
 
                             <ScrollView
+                                android:id="@+id/sv_oracle_log"
                                 android:layout_width="match_parent"
                                 android:layout_height="300dp"
                                 android:background="#0F172A"

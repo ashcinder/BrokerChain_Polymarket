@@ -3,28 +3,46 @@ package com.example.testing;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.google.android.material.button.MaterialButton;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.web3j.abi.datatypes.Function;
+import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.abi.datatypes.generated.Uint8;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Scanner;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * 【DeepSeek AI 交互界面】
- * 作用：接收来自详情页的博弈池数据，拼接成 Prompt，调用 DeepSeek 的大语言模型 API 获取投资建议。
+ * 【AI Agent 意图驱动交易终端 (Intent-Centric Trading)】
+ * 架构创新：
+ * 1. 结构化提示词工程：强迫大模型输出 JSON 格式的执行意图。
+ * 2. 意图嗅探与 UI 动态渲染：拦截底层 JSON 指令，转化为用户友好的“一键授权”按钮。
+ * 3. 链上交易直达：打通 Web3Repository，实现从“自然语言分析”到“智能合约调用”的无缝闭环。
  */
 public class AiAnalysisActivity extends AppCompatActivity {
 
@@ -33,17 +51,28 @@ public class AiAnalysisActivity extends AppCompatActivity {
     private EditText etInput;
     private ImageButton btnSend;
 
+    // 核心 Web3 交易组件
+    private Web3Repository repository;
+    private int targetGameId;
+    private String privateKey;
+
     // ⚠️ 极其重要：你的 DeepSeek API KEY
     private static final String DEEPSEEK_API_KEY = "sk-679c615e26234c67b00677ba689a80d8";
     private static final String API_URL = "https://api.deepseek.com/chat/completions";
 
-    // 历史对话记录，用于保持上下文
     private JSONArray messageHistory = new JSONArray();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_ai_analysis);
+
+        // 🌟 初始化 Web3 仓库，为 AI Agent 注入执行交易的能力
+        privateKey = getIntent().getStringExtra("PRIVATE_KEY");
+        targetGameId = getIntent().getIntExtra("GAME_ID", -1);
+        if (privateKey != null) {
+            repository = new Web3Repository(privateKey);
+        }
 
         llChatContainer = findViewById(R.id.ll_chat_container);
         svChat = findViewById(R.id.sv_chat);
@@ -53,54 +82,44 @@ public class AiAnalysisActivity extends AppCompatActivity {
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
 
         // ==========================================
-        // 🌟 核心升级：为 DeepSeek 注入 Polymarket / AMM 专用的投研人设 (System Prompt)
+        // 🌟 核心升级：为 DeepSeek 注入 AI Agent 行动派人设
         // ==========================================
         try {
             JSONObject systemMsg = new JSONObject();
             systemMsg.put("role", "system");
 
-            // 构建极其专业的 DeFi 预测市场分析师人设
-            String systemPrompt = "你是一个资深的 Web3 去中心化金融(DeFi)与预测市场(如 Polymarket)的投研分析师。\n" +
-                    "你精通 AMM(自动做市商)机制、恒定乘积公式、条件代币(Conditional Tokens)以及隐含概率(Implied Probability)的定价逻辑。\n" +
-                    "接下来，用户会发送一个预测市场的盘口数据（包含主题、规则、总资金池、各选项的虚拟储备量和当前胜率/价格）。\n" +
-                    "请结合现实世界的宏观背景、新闻动态，给出专业的投资建议。你的回答必须包含：\n" +
-                    "1. 盘口分析：当前各选项的价格(隐含胜率)是否合理反映了现实世界发生的概率？\n" +
-                    "2. 基本面研判：简述影响该事件走向的核心因素。\n" +
-                    "3. 交易策略：明确指出哪个选项（如 Buy Yes 或 Buy No）存在预期收益率(EV)的套利空间，或者是否被市场情绪高估/低估，并提示流动性风险。\n" +
-                    "要求：排版清晰（严格使用 Markdown 多级标题），专业客观，通俗易懂，直击痛点。";
+            String agentPrompt = "你是一个集成在预测市场中的高级 AI 自动化交易智能体(AI Agent)。\n" +
+                    "【任务】: 分析用户提供的盘口数据，判断是否存在预期收益率(EV)的套利空间，并给出操作指令。\n" +
+                    "【强制输出规范】: 你的回答必须严格分为两部分：\n" +
+                    "第一部分 (文字研报)：用 Markdown 格式进行专业的逻辑推演和基本面分析。\n" +
+                    "第二部分 (机器意图)：如果你认为某个选项值得买入，你必须在回答的最末尾(另起一行)附带一段用于程序解析的JSON指令，格式如下（绝对不要用 ```json 语法块包裹）：\n" +
+                    "AGENT_INTENT:{\"action\":\"MARKET_BUY\",\"optionId\":数字索引,\"targetPrice\":建议单价,\"reason\":\"简短理由\"}\n" +
+                    "注意：如果你建议抄底，可以将 action 设为 LIMIT_BUY。如果你认为目前没有套利空间建议观望，则无需输出 AGENT_INTENT 指令块。";
 
-            systemMsg.put("content", systemPrompt);
+            systemMsg.put("content", agentPrompt);
             messageHistory.put(systemMsg);
         } catch (Exception e) {
             e.printStackTrace();
         }
 
-        // 接收从详情页传过来的“初始分析数据”
         String initialPrompt = getIntent().getStringExtra("INITIAL_PROMPT");
         if (initialPrompt != null && !initialPrompt.isEmpty()) {
-            // 自动将分析请求发给 AI
             addMessageToUI(initialPrompt, true);
             callDeepSeekApi(initialPrompt);
-        } else {
-            addMessageToUI("你好！我是专注 AMM 预测市场的 DeepSeek 投研助手。请问你想分析哪个盘口？", false);
         }
 
-        // 发送按钮点击事件
         btnSend.setOnClickListener(v -> {
             String userText = etInput.getText().toString().trim();
-            if (TextUtils.isEmpty(userText)) return;
-
-            etInput.setText("");
-            addMessageToUI(userText, true);
-            callDeepSeekApi(userText);
+            if (!TextUtils.isEmpty(userText)) {
+                etInput.setText("");
+                addMessageToUI(userText, true);
+                callDeepSeekApi(userText);
+            }
         });
     }
 
     /**
-     * 将消息渲染到界面的气泡中
-     *
-     * @param text   消息内容
-     * @param isUser true 为用户发送（右侧蓝色），false 为 AI 接收（左侧白色）
+     * 将消息渲染到界面的气泡中 (支持意图指令拦截)
      */
     private void addMessageToUI(String text, boolean isUser) {
         View bubbleView = getLayoutInflater().inflate(R.layout.item_chat_bubble, llChatContainer, false);
@@ -115,23 +134,216 @@ public class AiAnalysisActivity extends AppCompatActivity {
             tvUser.setText(text);
         } else {
             llAi.setVisibility(View.VISIBLE);
-            tvAi.setText(parseMarkdown(text));
+
+            // ==========================================
+            // 🌟 创新点：AI 意图解析器 (Intent Parser)
+            // 作用：利用正则剥离 JSON 指令，转化为动态 UI 组件，不让用户看到底层代码
+            // ==========================================
+            String cleanText = text;
+            JSONObject intentObj = null;
+
+            try {
+                // 使用正则匹配 AGENT_INTENT:{...} 结构
+                Pattern pattern = Pattern.compile("AGENT_INTENT:(\\{.*\\})", Pattern.DOTALL);
+                Matcher matcher = pattern.matcher(text);
+                if (matcher.find()) {
+                    String jsonStr = matcher.group(1);
+                    intentObj = new JSONObject(jsonStr);
+                    // 将 JSON 指令从前端显示的文字中彻底抹除
+                    cleanText = text.replace(matcher.group(0), "").trim();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            // 渲染纯净的 Markdown 研报文字
+            tvAi.setText(parseMarkdown(cleanText));
+
+            // 如果捕获到了交易意图，动态生成一个授权执行按钮
+            if (intentObj != null && repository != null) {
+                final JSONObject finalIntent = intentObj;
+                MaterialButton btnExecute = new MaterialButton(this);
+                btnExecute.setText("⚡ 授权 AI 自动执行策略");
+                btnExecute.setAllCaps(false);
+                btnExecute.setBackgroundColor(0xFF0052FF); // 品牌蓝
+                btnExecute.setTextColor(android.graphics.Color.WHITE);
+                btnExecute.setElevation(0f);
+                btnExecute.setCornerRadius((int) (8 * getResources().getDisplayMetrics().density));
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMargins(0, (int) (12 * getResources().getDisplayMetrics().density), 0, 0);
+                btnExecute.setLayoutParams(lp);
+
+                // 绑定点击事件，呼出交易授权框
+                btnExecute.setOnClickListener(v -> showAgentConfirmDialog(finalIntent));
+
+                // 将按钮动态挂载到气泡的最下方
+                llAi.addView(btnExecute);
+            }
         }
 
         llChatContainer.addView(bubbleView);
-        // 自动滚动到底部
         svChat.post(() -> svChat.fullScroll(View.FOCUS_DOWN));
     }
 
     /**
-     * 核心：利用 AppExecutors 后台线程调用 DeepSeek HTTP API
+     * 呼出 AI Agent 交易授权确认弹窗
      */
+    /**
+     * 呼出 AI Agent 交易授权确认弹窗 (支持用户自定义微调参数)
+     */
+    private void showAgentConfirmDialog(JSONObject intent) {
+        try {
+            // 1. 解析 AI 预生成的初始参数
+            String aiAction = intent.getString("action"); // MARKET_BUY 或 LIMIT_BUY
+            int optionId = intent.getInt("optionId");
+            double aiPrice = intent.getDouble("targetPrice");
+            String reason = intent.getString("reason");
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("🤖 AI 策略授权与参数微调");
+
+            // 动态构建自定义表单布局
+            LinearLayout layout = new LinearLayout(this);
+            layout.setOrientation(LinearLayout.VERTICAL);
+            int padding = (int) (20 * getResources().getDisplayMetrics().density);
+            layout.setPadding(padding, padding, padding, padding);
+
+            // 2. 显示 AI 的分析逻辑 (只读)
+            TextView tvReason = new TextView(this);
+            tvReason.setText("💡 AI 推荐理由:\n" + reason + "\n\n🎯 目标标的: 选项 " + optionId);
+            tvReason.setTextColor(0xFF0F172A);
+            tvReason.setTextSize(14f);
+            tvReason.setPadding(0, 0, 0, padding);
+            layout.addView(tvReason);
+
+            // 3. 交易模式切换 (🌟 允许用户随时推翻 AI 的决定，切换市价/限价)
+            TextView tvModeLabel = new TextView(this);
+            tvModeLabel.setText("您可在此微调交易模式与价格:");
+            tvModeLabel.setTextColor(0xFF64748B);
+            tvModeLabel.setTextSize(12f);
+            layout.addView(tvModeLabel);
+
+            RadioGroup rgMode = new RadioGroup(this);
+            rgMode.setOrientation(LinearLayout.HORIZONTAL);
+            RadioButton rbMarket = new RadioButton(this);
+            rbMarket.setText("市价急速买入  ");
+            rbMarket.setId(View.generateViewId());
+            RadioButton rbLimit = new RadioButton(this);
+            rbLimit.setText("限价埋伏抄底");
+            rbLimit.setId(View.generateViewId());
+            rgMode.addView(rbMarket);
+            rgMode.addView(rbLimit);
+            layout.addView(rgMode);
+
+            // 4. 限价输入框 (🌟 预填充 AI 建议的价格，但允许用户手动修改)
+            final EditText etLimitPrice = new EditText(this);
+            etLimitPrice.setHint("触发限价 (BKC)");
+            etLimitPrice.setText(String.valueOf(aiPrice)); // 填入 AI 的建议价
+            etLimitPrice.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            etLimitPrice.setBackgroundResource(android.R.drawable.edit_text);
+            LinearLayout.LayoutParams lpPrice = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lpPrice.setMargins(0, 16, 0, 0);
+            etLimitPrice.setLayoutParams(lpPrice);
+            layout.addView(etLimitPrice);
+
+            // 根据 AI 的初始建议，自动勾选对应的模式
+            if (aiAction.equals("MARKET_BUY")) {
+                rbMarket.setChecked(true);
+                etLimitPrice.setVisibility(View.GONE); // 市价单隐藏限价框
+            } else {
+                rbLimit.setChecked(true);
+                etLimitPrice.setVisibility(View.VISIBLE);
+            }
+
+            // 监听用户的手动切换
+            rgMode.setOnCheckedChangeListener((group, checkedId) -> {
+                if (checkedId == rbMarket.getId()) {
+                    etLimitPrice.setVisibility(View.GONE);
+                } else {
+                    etLimitPrice.setVisibility(View.VISIBLE);
+                }
+            });
+
+            // 5. 投入金额输入框 (留给用户做最终的资金决定)
+            final EditText etAmount = new EditText(this);
+            etAmount.setHint("请输入授权执行的金额 (BKC)");
+            etAmount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            etAmount.setBackgroundResource(android.R.drawable.edit_text);
+            LinearLayout.LayoutParams lpAmt = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lpAmt.setMargins(0, 32, 0, 0);
+            etAmount.setLayoutParams(lpAmt);
+            layout.addView(etAmount);
+
+            builder.setView(layout);
+
+            builder.setPositiveButton("签名并执行", (dialog, which) -> {
+                String amtStr = etAmount.getText().toString().trim();
+                if (amtStr.isEmpty()) {
+                    Toast.makeText(this, "授权金额不能为空", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                // 🌟 获取用户最终敲定的参数 (可能是 AI 建议的，也可能是用户篡改后的)
+                String finalAction = rbMarket.isChecked() ? "MARKET_BUY" : "LIMIT_BUY";
+                double finalPrice = aiPrice;
+                if (rbLimit.isChecked()) {
+                    String priceStr = etLimitPrice.getText().toString().trim();
+                    if (!priceStr.isEmpty()) {
+                        finalPrice = Double.parseDouble(priceStr);
+                    }
+                }
+
+                // 提交给执行引擎
+                executeAgentTrade(finalAction, optionId, finalPrice, new BigDecimal(amtStr));
+            });
+
+            builder.setNegativeButton("取消", null);
+            builder.show();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Toast.makeText(this, "解析 AI 意图失败", Toast.LENGTH_SHORT).show();
+        }
+    }
+    /**
+     * Agent 自动调用区块链底层网络发起交易
+     */
+    private void executeAgentTrade(String action, int optionId, double price, BigDecimal amount) {
+        Toast.makeText(this, "🤖 正在构建链上指令...", Toast.LENGTH_SHORT).show();
+
+        BigInteger wei = org.web3j.utils.Convert.toWei(amount, org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
+
+        if (action.equals("MARKET_BUY")) {
+            // 一键市价上链
+            Function f = new Function("buyShares", Arrays.asList(new Uint256(targetGameId), new Uint8(optionId)), Collections.emptyList());
+            repository.sendTransaction(wei, f, "策略执行成功", new Web3Repository.TxCallback() {
+                @Override
+                public void onTxSent(String txHash) {
+                }
+
+                @Override
+                public void onConfirmed(String message) {
+                    addMessageToUI("✅ **[Agent 监控日志]** 交易已在区块链上被矿工确认。份额已发放至您的钱包，可返回详情页查看最新持仓。", false);
+                }
+
+                @Override
+                public void onError(String error) {
+                    addMessageToUI("❌ **[Agent 错误日志]** 智能合约拒绝了本次交易，原因: " + error, false);
+                }
+            });
+        } else {
+            // 限价单属于本地挂单簿功能，此处优雅提示用户退回上一页完成限价挂单
+            addMessageToUI("💡 **[Agent 策略提示]** 这是一个【限价抄底策略】。为了保证您的资金安全，请点击左上角返回详情页，在买入面板中选择“限价单”，并填入建议价格 `" + price + "` BKC，让后台机器人帮您盯盘。", false);
+        }
+    }
+
     private void callDeepSeekApi(String userText) {
-        // 先在 UI 显示一个 Loading 状态
         View loadingBubble = getLayoutInflater().inflate(R.layout.item_chat_bubble, llChatContainer, false);
         loadingBubble.findViewById(R.id.ll_ai_message).setVisibility(View.VISIBLE);
         TextView tvLoading = loadingBubble.findViewById(R.id.tv_ai_text);
-        tvLoading.setText("正在基于 AMM 模型进行深度推演...");
+        tvLoading.setText("正在进行数据建模与策略回测...");
         llChatContainer.addView(loadingBubble);
         svChat.post(() -> svChat.fullScroll(View.FOCUS_DOWN));
 
@@ -139,26 +351,23 @@ public class AiAnalysisActivity extends AppCompatActivity {
 
         AppExecutors.getInstance().networkIO().execute(() -> {
             try {
-                // 1. 将用户的输入压入历史记录
                 JSONObject userMsg = new JSONObject();
                 userMsg.put("role", "user");
                 userMsg.put("content", userText);
                 messageHistory.put(userMsg);
 
-                // 2. 构建 DeepSeek 的请求体 JSON
                 JSONObject requestBody = new JSONObject();
-                requestBody.put("model", "deepseek-chat"); // 使用 deepseek 官方主模型
+                requestBody.put("model", "deepseek-chat");
                 requestBody.put("messages", messageHistory);
                 requestBody.put("stream", false);
 
-                // 3. 发送 POST 请求
                 URL url = new URL(API_URL);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setRequestProperty("Accept", "application/json");
                 conn.setRequestProperty("Authorization", "Bearer " + DEEPSEEK_API_KEY);
-                conn.setConnectTimeout(10000); // 增加网络超时时间，防止大模型响应过慢导致崩溃
+                conn.setConnectTimeout(10000);
                 conn.setReadTimeout(30000);
                 conn.setDoOutput(true);
 
@@ -169,77 +378,55 @@ public class AiAnalysisActivity extends AppCompatActivity {
 
                 int responseCode = conn.getResponseCode();
                 if (responseCode == 200) {
-                    // 4. 读取解析返回的回复
                     Scanner scanner = new Scanner(conn.getInputStream(), "UTF-8").useDelimiter("\\A");
                     String resStr = scanner.hasNext() ? scanner.next() : "";
                     JSONObject responseJson = new JSONObject(resStr);
 
-                    // 获取回复文本
                     String aiReply = responseJson.getJSONArray("choices")
                             .getJSONObject(0)
                             .getJSONObject("message")
                             .getString("content");
 
-                    // 把 AI 的回复存入上下文
                     JSONObject aiMsg = new JSONObject();
                     aiMsg.put("role", "assistant");
                     aiMsg.put("content", aiReply);
                     messageHistory.put(aiMsg);
 
-                    // 5. 切回主线程更新 UI
                     AppExecutors.getInstance().mainThread().execute(() -> {
-                        llChatContainer.removeView(loadingBubble); // 移除 Loading
-                        addMessageToUI(aiReply, false);            // 添加真实回复
+                        llChatContainer.removeView(loadingBubble);
+                        addMessageToUI(aiReply, false);
                         btnSend.setEnabled(true);
                     });
                 } else {
-                    // 读取失败原因
                     InputStream es = conn.getErrorStream();
                     String errorMsg = es != null ? new Scanner(es, "UTF-8").useDelimiter("\\A").next() : "未知网络错误";
                     AppExecutors.getInstance().mainThread().execute(() -> {
                         llChatContainer.removeView(loadingBubble);
-                        addMessageToUI("抱歉，API 调用失败，状态码: " + responseCode + "\n" + errorMsg, false);
+                        addMessageToUI("API 调用失败，状态码: " + responseCode + "\n" + errorMsg, false);
                         btnSend.setEnabled(true);
                     });
                 }
             } catch (Exception e) {
                 AppExecutors.getInstance().mainThread().execute(() -> {
                     llChatContainer.removeView(loadingBubble);
-                    addMessageToUI("抱歉，网络出现异常: " + e.getMessage(), false);
+                    addMessageToUI("网络出现异常: " + e.getMessage(), false);
                     btnSend.setEnabled(true);
                 });
             }
         });
     }
 
-    /**
-     * 原生轻量级 Markdown 解析器 (增强版)
-     * 将 DeepSeek 返回的标题(###)、加粗(**)、列表(*)、换行(\n)转化为 Android 原生 Html 渲染
-     */
     private android.text.Spanned parseMarkdown(String markdown) {
         if (markdown == null) return android.text.Html.fromHtml("");
-
         String html = markdown;
 
-        // 1. 处理三级标题 (### 文字) -> 将文字放大并加粗 (模拟 <h3> 效果)
         html = html.replaceAll("(?m)^###\\s+(.*)$", "<h3><font color='#0052FF'>$1</font></h3>");
-
-        // 2. 处理二级标题 (## 文字) -> (模拟 <h2> 效果)
         html = html.replaceAll("(?m)^##\\s+(.*)$", "<h2>$1</h2>");
-
-        // 3. 处理一级标题 (# 文字) -> (模拟 <h1> 效果)
         html = html.replaceAll("(?m)^#\\s+(.*)$", "<h1>$1</h1>");
-
-        // 处理加粗: 将 **文字** 替换为 <b>文字</b>
         html = html.replaceAll("\\*\\*(.*?)\\*\\*", "<b>$1</b>");
-
-        // 处理无序列表: 将行首的 * 或 - 替换为原生的圆点符号
         html = html.replaceAll("(?m)^\\s*[\\*\\-]\\s+(.*)$", "&#8226; $1");
-
-        // 最后处理换行: 将剩余的 \n 替换为 HTML 的换行符 <br>
         html = html.replace("\n", "<br>");
 
-        // 调用 Android 原生 Html 解析引擎渲染文本
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             return android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_COMPACT);
         } else {

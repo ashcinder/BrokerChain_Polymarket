@@ -4,7 +4,9 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -133,7 +135,7 @@ public class GameDetailActivity extends AppCompatActivity {
         autoTradeRunnable = new Runnable() {
             @Override
             public void run() {
-                if (isDestroyed() || isFinishing()) return; // 🛡️ 终极防闪退检查
+                if (isDestroyed() || isFinishing()) return;
 
                 if (!activeLimitOrders.isEmpty() || isAiManaged) {
                     loadMarketData();
@@ -160,7 +162,7 @@ public class GameDetailActivity extends AppCompatActivity {
             @Override
             public void onSuccess(Web3Repository.GameModel game) {
                 runOnUiThread(() -> {
-                    if (isDestroyed() || isFinishing()) return; // 🛡️ 防止异步回调时页面已关闭导致的闪退
+                    if (isDestroyed() || isFinishing()) return;
                     currentGameData = game;
                     renderDetail(game);
                 });
@@ -179,6 +181,11 @@ public class GameDetailActivity extends AppCompatActivity {
         TextView tvCondition = findViewById(R.id.tv_detail_condition);
         TextView tvDeadline = findViewById(R.id.tv_detail_deadline);
         LinearLayout llOptions = findViewById(R.id.ll_detail_options);
+
+        ImageView ivAvatar = findViewById(R.id.iv_detail_avatar);
+        if (ivAvatar != null && game.avatarUrl != null && !game.avatarUrl.isEmpty()) {
+            MainActivity.loadNetworkImage(game.avatarUrl, ivAvatar);
+        }
 
         tvTitle.setText(game.desc);
         tvVolume.setText("真实交易量: " + formatWei(game.totalPool) + " BKC");
@@ -200,7 +207,6 @@ public class GameDetailActivity extends AppCompatActivity {
             tvStatus.setText("🟢 交易进行中");
         }
 
-        // 隐藏托管按钮如果市场已关闭
         MaterialButton btnAiManaged = findViewById(R.id.btn_ai_managed_trade);
         if (btnAiManaged != null) {
             btnAiManaged.setVisibility(isMarketClosed ? View.GONE : View.VISIBLE);
@@ -209,21 +215,29 @@ public class GameDetailActivity extends AppCompatActivity {
         llOptions.removeAllViews();
 
         List<Float> finalProbabilities = new ArrayList<>();
+
+        // 1. 第一个循环：计算总虚拟库存
         BigDecimal totalVirtualBd = BigDecimal.ZERO;
         for (int i = 0; i < game.optionCount; i++) {
             totalVirtualBd = totalVirtualBd.add(new BigDecimal(game.virtualReserves.get(i)));
         }
 
+        // ==========================================
+        // 🌟 核心修复：声明一个 final 变量供 Lambda 使用
+        // ==========================================
+        final BigDecimal finalTotalVirtualBd = totalVirtualBd;
+
         List<LimitOrder> triggeredOrders = new ArrayList<>();
 
+        // 2. 第二个循环：渲染列表
         for (int i = 0; i < game.optionCount; i++) {
             final int optionIndex = i;
             String optName = (i < game.optionNames.size()) ? game.optionNames.get(i) : "选项 " + (i + 1);
 
             BigInteger virtualReserve = game.virtualReserves.get(i);
             float prob = 0f;
-            if (totalVirtualBd.compareTo(BigDecimal.ZERO) > 0) {
-                prob = new BigDecimal(virtualReserve).divide(totalVirtualBd, 4, RoundingMode.HALF_UP).floatValue() * 100;
+            if (finalTotalVirtualBd.compareTo(BigDecimal.ZERO) > 0) {
+                prob = new BigDecimal(virtualReserve).divide(finalTotalVirtualBd, 4, RoundingMode.HALF_UP).floatValue() * 100;
             }
             finalProbabilities.add(prob);
 
@@ -252,9 +266,30 @@ public class GameDetailActivity extends AppCompatActivity {
             tvOptName.setText(optName);
             tvProb.setText(String.format("%.0f%%", prob));
 
+            // ==========================================
+            // 🌟 动态植入“卖出平仓”UI交互
+            // ==========================================
             if (game.myShares != null && game.myShares.size() > i && game.myShares.get(i).signum() > 0) {
                 tvOptShares.setVisibility(View.VISIBLE);
-                tvOptShares.setText("已持有 " + formatWei(game.myShares.get(i)) + " 份");
+                String sharesStr = formatWei(game.myShares.get(i));
+                tvOptShares.setText(String.format("持有 %s 份 (点击卖出)", sharesStr));
+
+                // 将文字设置为可点击的品牌蓝色，暗示可交互
+                tvOptShares.setTextColor(0xFF0052FF);
+                tvOptShares.setBackgroundResource(android.R.drawable.list_selector_background);
+                tvOptShares.setPadding(10, 5, 10, 5);
+
+                if (!isMarketClosed) {
+                    // 添加点击事件，唤出专属的 Sell 面板
+                    tvOptShares.setOnClickListener(v -> showSellDialog(
+                            game.id,
+                            optionIndex,
+                            optName,
+                            game.myShares.get(optionIndex),
+                            game.virtualReserves.get(optionIndex),
+                            finalTotalVirtualBd // ✅ 这里传入定格后的 final 变量，完美解决报错！
+                    ));
+                }
             }
 
             btnBuyYes.setText(String.format("Yes %.2f", priceYes));
@@ -296,7 +331,6 @@ public class GameDetailActivity extends AppCompatActivity {
 
         MaterialButton btnAi = findViewById(R.id.btn_ai_analysis);
         if (btnAi != null) {
-            // 防止重复绑定监听器
             btnAi.setOnClickListener(null);
             btnAi.setOnClickListener(v -> {
                 StringBuilder prompt = new StringBuilder();
@@ -324,25 +358,113 @@ public class GameDetailActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * 🌟 更新 AI 托管中心按钮 UI 状态
-     */
+    // ==========================================
+    // 🌟 全新添加：卖出平仓操作面板
+    // ==========================================
+    private void showSellDialog(int gameId, int optionId, String optName, BigInteger myShares, BigInteger currentReserve, BigDecimal totalVirtual) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("卖出平仓 (Sell Shares)");
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int) (24 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        TextView tvInfo = new TextView(this);
+        String maxSharesStr = formatWei(myShares);
+        tvInfo.setText(String.format("标的: %s\n可卖出最大份额: %s", optName, maxSharesStr));
+        tvInfo.setTextColor(0xFF0F172A);
+        tvInfo.setTextSize(14f);
+        tvInfo.setPadding(0, 0, 0, padding / 2);
+        layout.addView(tvInfo);
+
+        final EditText etAmount = new EditText(this);
+        etAmount.setHint("输入要卖出的份额数量");
+        etAmount.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        etAmount.setBackgroundResource(android.R.drawable.edit_text);
+        layout.addView(etAmount);
+
+        // 动态计算预计退回金额的提示文字
+        TextView tvEstimate = new TextView(this);
+        tvEstimate.setTextColor(0xFF10B981); // 绿色
+        tvEstimate.setTextSize(12f);
+        tvEstimate.setPadding(0, padding / 4, 0, 0);
+        tvEstimate.setText("预计退回: 0.00 BKC (含 2% 保护费率)");
+        layout.addView(tvEstimate);
+
+        // 监听用户输入，实时计算退回金额
+        etAmount.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override
+            public void afterTextChanged(Editable s) {
+                try {
+                    String input = s.toString();
+                    if (input.isEmpty()) {
+                        tvEstimate.setText("预计退回: 0.00 BKC (含 2% 保护费率)");
+                        return;
+                    }
+                    BigDecimal sellAmount = new BigDecimal(input);
+                    BigDecimal reserveBd = new BigDecimal(currentReserve);
+                    // 理论退回金额 = (卖出份额 * 该选项虚拟库存) / 总虚拟库存
+                    BigDecimal rawReturn = sellAmount.multiply(reserveBd).divide(totalVirtual, 4, RoundingMode.HALF_UP);
+                    // 扣除 2%
+                    BigDecimal finalReturn = rawReturn.multiply(new BigDecimal("0.98"));
+                    tvEstimate.setText(String.format("预计退回: %.4f BKC (含 2%% 保护费率)", finalReturn.floatValue()));
+                } catch (Exception e) {
+                    tvEstimate.setText("输入格式有误");
+                }
+            }
+        });
+
+        builder.setView(layout);
+
+        builder.setPositiveButton("确认卖出", (dialog, which) -> {
+            String amtStr = etAmount.getText().toString().trim();
+            if (!amtStr.isEmpty()) {
+                try {
+                    BigDecimal amount = new BigDecimal(amtStr);
+                    BigInteger sellWei = org.web3j.utils.Convert.toWei(amount, org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
+
+                    if (sellWei.compareTo(myShares) > 0) {
+                        Toast.makeText(this, "卖出数额不能超过您的最大持有量！", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // 调用智能合约的 sellShares 函数
+                    Function f = new Function("sellShares", Arrays.asList(
+                            new Uint256(gameId),
+                            new Uint8(optionId),
+                            new Uint256(sellWei)
+                    ), Collections.emptyList());
+
+                    // 注意：卖出操作不支付 BKC，所以 value 传 ZERO
+                    executeTx(BigInteger.ZERO, f, "卖出平仓成功，BKC已退回钱包！");
+
+                } catch (Exception e) {
+                    Toast.makeText(this, "输入的数额格式不正确", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                Toast.makeText(this, "卖出数额不能为空", Toast.LENGTH_SHORT).show();
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
     private void updateAiManageUI() {
         MaterialButton btnAiManaged = findViewById(R.id.btn_ai_managed_trade);
         if (btnAiManaged == null) return;
 
         if (isAiManaged) {
             btnAiManaged.setText("🛑 停止 AI 智能托管 (运行中)");
-            btnAiManaged.setBackgroundColor(0xFFEF4444); // 红色警戒色
+            btnAiManaged.setBackgroundColor(0xFFEF4444);
         } else {
             btnAiManaged.setText("🤖 开启 AI 智能托管");
-            btnAiManaged.setBackgroundColor(0xFF0052FF); // 品牌蓝
+            btnAiManaged.setBackgroundColor(0xFF0052FF);
         }
     }
 
-    /**
-     * 🌟 托管配置界面弹窗
-     */
     private void showAiManageConfigDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("配置 AI 自动交易参数");
@@ -383,7 +505,7 @@ public class GameDetailActivity extends AppCompatActivity {
                 isAiManaged = true;
                 Toast.makeText(this, "🚀 AI 托管已激活，系统转入后台盯盘...", Toast.LENGTH_LONG).show();
                 updateAiManageUI();
-                performAiBackgroundAnalysis(); // 开启时立即执行一次探测
+                performAiBackgroundAnalysis();
             } else {
                 Toast.makeText(this, "请输入资金限制", Toast.LENGTH_SHORT).show();
             }
@@ -392,9 +514,6 @@ public class GameDetailActivity extends AppCompatActivity {
         builder.show();
     }
 
-    /**
-     * 🌟 AI 静默分析引擎 (后台网络调用)
-     */
     private void performAiBackgroundAnalysis() {
         if (currentGameData == null) return;
         lastAiCheckTime = System.currentTimeMillis();
@@ -681,27 +800,39 @@ public class GameDetailActivity extends AppCompatActivity {
     }
 
     private void executeTx(BigInteger value, Function f, String successMsg) {
+        final long txStartTime = System.currentTimeMillis();
+        android.util.Log.d("LatencyTest", "🚀 发起链上交易，开始计时...");
+
         runOnUiThread(() -> Toast.makeText(this, "⏳ 正在连接底层公链...", Toast.LENGTH_SHORT).show());
 
         repository.sendTransaction(value, f, successMsg, new Web3Repository.TxCallback() {
             @Override
             public void onTxSent(String txHash) {
+                long sendLatency = System.currentTimeMillis() - txStartTime;
+                android.util.Log.d("LatencyTest", "📡 交易网络握手完成，耗时: " + sendLatency + " ms");
             }
 
             @Override
             public void onConfirmed(String message) {
+                long confirmLatency = System.currentTimeMillis() - txStartTime;
+                android.util.Log.d("LatencyTest", "✅ 区块已打包！端到端总确认时延: " + confirmLatency + " ms");
+
                 runOnUiThread(() -> {
                     if (isDestroyed() || isFinishing()) return;
-                    Toast.makeText(GameDetailActivity.this, message + " (区块已确认)", Toast.LENGTH_LONG).show();
+                    String latencyInfo = String.format(" (确认时延: %.2f 秒)", confirmLatency / 1000.0);
+                    Toast.makeText(GameDetailActivity.this, message + latencyInfo, Toast.LENGTH_LONG).show();
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> loadMarketData(), 1000);
                 });
             }
 
             @Override
             public void onError(String error) {
+                long errorLatency = System.currentTimeMillis() - txStartTime;
+                android.util.Log.d("LatencyTest", "❌ 交易被拒，中止时延: " + errorLatency + " ms");
+
                 runOnUiThread(() -> {
                     if (isDestroyed() || isFinishing()) return;
-                    Toast.makeText(GameDetailActivity.this, error != null ? error : "交易被网络拒绝", Toast.LENGTH_LONG).show();
+                    Toast.makeText(GameDetailActivity.this, (error != null ? error : "交易被网络拒绝"), Toast.LENGTH_LONG).show();
                 });
             }
         });

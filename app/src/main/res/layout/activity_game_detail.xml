@@ -168,33 +168,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_ai_analysis"
-                android:layout_width="match_parent"
-                android:layout_height="55dp"
-                android:layout_marginTop="20dp"
-                android:text="✨ 召唤 DeepSeek 进行 AI 投研分析"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                app:backgroundTint="#000000"
-                app:cornerRadius="12dp"
-                app:icon="@android:drawable/ic_menu_info_details"
-                app:iconGravity="textStart"
-                app:iconTint="#FFFFFF" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_ai_managed_trade"
-                android:layout_width="match_parent"
-                android:layout_height="55dp"
-                android:layout_marginTop="12dp"
-                android:text="🤖 开启 AI 智能托管"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                app:backgroundTint="#0052FF"
-                app:cornerRadius="12dp" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -211,6 +184,34 @@
                 android:layout_height="wrap_content"
                 android:background="#FFFFFF"
                 android:orientation="vertical" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_ai_analysis"
+                android:layout_width="match_parent"
+                android:layout_height="55dp"
+                android:layout_marginTop="32dp"
+                android:text="✨ 召唤 DeepSeek 进行 AI 投研分析"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:backgroundTint="#000000"
+                app:cornerRadius="12dp"
+                app:icon="@android:drawable/ic_menu_info_details"
+                app:iconGravity="textStart"
+                app:iconTint="#FFFFFF" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_ai_managed_trade"
+                android:layout_width="match_parent"
+                android:layout_height="55dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="16dp"
+                android:text="🤖 开启 AI 智能托管"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:backgroundTint="#0052FF"
+                app:cornerRadius="12dp" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

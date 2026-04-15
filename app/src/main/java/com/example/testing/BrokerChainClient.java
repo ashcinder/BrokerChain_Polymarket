@@ -36,8 +36,7 @@ public class BrokerChainClient {
     // 统一配置服务器地址和端口，指向你们老师搭建的定制区块链节点
     private static final String BASE_URL = "https://dash.broker-chain.com:443/";
 
-    // 全局默认合约地址（用于某些未显式传入目标地址的快捷接口）
-    public static String contractaddr = "0xa5C9AA42021FfE5DDa9717BFC3707fe21076aAdf";
+
 
     // 引入 Gson 库，用于快速将 Java 的对象转化为 JSON 字符串，方便网络传输
     private static final Gson gson = new Gson();
@@ -222,79 +221,17 @@ public class BrokerChainClient {
 
     // ---------- 以下为该区块链网络特定的专用快捷接口 ----------
 
-    /**
-     * 根据交易哈希查询交易的回执结果
-     */
-    public static String getTransactionReceipt(String hash, String privateKey) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String thedata = uuid + hash;
-        String[] sign = signECDSA(privateKey, thedata);
 
-        GetTransactionReceiptReq req = new GetTransactionReceiptReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setUUID(hash);
-        req.setRandomStr(uuid);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        return doPost("eth_getTransactionReceipt", req);
-    }
 
-    public static String withdraw(String privateKey) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String[] sign = signECDSA(privateKey, uuid);
-        WithdrawBrokerReq req = new WithdrawBrokerReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setRandomStr(uuid);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        return doPost("withdrawbroker", req);
-    }
 
-    public static String stake(String privateKey, String value) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String data = uuid + value;
-        String[] sign = signECDSA(privateKey, data);
-        StakeReq req = new StakeReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setRandomStr(uuid);
-        req.setValue(value);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        return doPost("stake", req);
-    }
 
-    public static String querybrokerprofit(String privateKey) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String[] sign = signECDSA(privateKey, uuid);
-        ApplyBrokerReq req = new ApplyBrokerReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setRandomStr(uuid);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        return doPost("querybrokerprofit", req);
-    }
 
-    public static String applybroker(String privateKey) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String[] sign = signECDSA(privateKey, uuid);
-        ApplyBrokerReq req = new ApplyBrokerReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setRandomStr(uuid);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        return doPost("applybroker", req);
-    }
 
-    public static String queryisbroker(String privateKey) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String[] sign = signECDSA(privateKey, uuid);
-        QueryIsBrokerReq req = new QueryIsBrokerReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setRandomStr(uuid);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        return doPost("queryisbroker", req);
-    }
+
+
+
+
+
 
     /**
      * 查询指定钱包的以太币 (此网络中可能称为 BKC) 余额
@@ -327,33 +264,9 @@ public class BrokerChainClient {
         return state;
     }
 
-    public static String claim(String privateKey) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String[] sign = signECDSA(privateKey, uuid);
-        ClaimReq req = new ClaimReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setRandomStr(uuid);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        return doPost("claim", req);
-    }
 
-    public static String SendTX(String privateKey, String to, String value, String fee) throws Exception {
-        String uuid = UUID.randomUUID().toString();
-        String data = (fee != null && !fee.isEmpty()) ? uuid + to + value + fee : uuid + to + value;
-        String[] sign = signECDSA(privateKey, data);
 
-        TxReq req = new TxReq();
-        req.setPublicKey(getPublicKeyFromPrivateKey(privateKey));
-        req.setRandomStr(uuid);
-        req.setTo(to);
-        req.setValue(value);
-        req.setSign1(sign[0]);
-        req.setSign2(sign[1]);
-        if (fee != null && !fee.isEmpty()) req.setFee(fee);
 
-        return doPost("sendtx", req);
-    }
 
     // =====================================================================
     // 4. 数据结构体层 (DTO)
@@ -451,122 +364,15 @@ public class BrokerChainClient {
         }
     }
 
-    public static class GetTransactionReceiptReq {
-        @SerializedName("uuid")
-        private String UUID;
-        @SerializedName("PublicKey")
-        private String PublicKey;
-        @SerializedName("RandomStr")
-        private String RandomStr;
-        @SerializedName("Sign1")
-        private String Sign1;
-        @SerializedName("Sign2")
-        private String Sign2;
 
-        public void setUUID(String u) {
-            UUID = u;
-        }
 
-        public void setPublicKey(String p) {
-            PublicKey = p;
-        }
 
-        public void setRandomStr(String r) {
-            RandomStr = r;
-        }
 
-        public void setSign1(String s) {
-            Sign1 = s;
-        }
 
-        public void setSign2(String s) {
-            Sign2 = s;
-        }
-    }
 
-    public static class WithdrawBrokerReq {
-        private String PublicKey, RandomStr, Sign1, Sign2;
 
-        public void setPublicKey(String p) {
-            PublicKey = p;
-        }
 
-        public void setRandomStr(String r) {
-            RandomStr = r;
-        }
 
-        public void setSign1(String s) {
-            Sign1 = s;
-        }
-
-        public void setSign2(String s) {
-            Sign2 = s;
-        }
-    }
-
-    public static class StakeReq {
-        private String PublicKey, RandomStr, Sign1, Sign2, Value;
-
-        public void setPublicKey(String p) {
-            PublicKey = p;
-        }
-
-        public void setRandomStr(String r) {
-            RandomStr = r;
-        }
-
-        public void setSign1(String s) {
-            Sign1 = s;
-        }
-
-        public void setSign2(String s) {
-            Sign2 = s;
-        }
-
-        public void setValue(String v) {
-            Value = v;
-        }
-    }
-
-    public static class ApplyBrokerReq {
-        private String PublicKey, RandomStr, Sign1, Sign2;
-
-        public void setPublicKey(String p) {
-            PublicKey = p;
-        }
-
-        public void setRandomStr(String r) {
-            RandomStr = r;
-        }
-
-        public void setSign1(String s) {
-            Sign1 = s;
-        }
-
-        public void setSign2(String s) {
-            Sign2 = s;
-        }
-    }
-
-    public static class QueryIsBrokerReq {
-        private String PublicKey, RandomStr, Sign1, Sign2;
-
-        public void setPublicKey(String p) {
-            PublicKey = p;
-        }
-
-        public void setRandomStr(String r) {
-            RandomStr = r;
-        }
-
-        public void setSign1(String s) {
-            Sign1 = s;
-        }
-
-        public void setSign2(String s) {
-            Sign2 = s;
-        }
-    }
 
     public static class QueryReq {
         private String PublicKey, RandomStr, Sign1, Sign2, UUID;
@@ -592,57 +398,9 @@ public class BrokerChainClient {
         }
     }
 
-    public static class TxReq {
-        private String PublicKey, RandomStr, To, Value, Sign1, Sign2, Fee;
 
-        public void setPublicKey(String p) {
-            PublicKey = p;
-        }
 
-        public void setRandomStr(String r) {
-            RandomStr = r;
-        }
 
-        public void setTo(String t) {
-            To = t;
-        }
-
-        public void setValue(String v) {
-            Value = v;
-        }
-
-        public void setSign1(String s) {
-            Sign1 = s;
-        }
-
-        public void setSign2(String s) {
-            Sign2 = s;
-        }
-
-        public void setFee(String f) {
-            Fee = f;
-        }
-    }
-
-    public static class ClaimReq {
-        private String PublicKey, RandomStr, Sign1, Sign2;
-
-        public void setPublicKey(String p) {
-            PublicKey = p;
-        }
-
-        public void setRandomStr(String r) {
-            RandomStr = r;
-        }
-
-        public void setSign1(String s) {
-            Sign1 = s;
-        }
-
-        public void setSign2(String s) {
-            Sign2 = s;
-        }
-    }
 
     /**
      * 映射网络返回的账户状态数据 JSON
@@ -652,9 +410,6 @@ public class BrokerChainClient {
         private String AccountAddr;
         @SerializedName("balance")
         private String Balance;
-        private boolean isHidden = false;
-        private String accountName;
-        private boolean isNewPrivateKeyFormat;
 
         public String getAccountAddr() {
             return AccountAddr;

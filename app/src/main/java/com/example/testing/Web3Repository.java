@@ -26,7 +26,7 @@ public class Web3Repository {
     private static final String TAG = "Web3Repository";
 
     // ⚠️ 极其重要：填入你刚刚部署的 AMM 版本的新合约地址！
-    private static final String CONTRACT_ADDRESS = "0x2DC6A9C7b67Ae91bB0B1a98C690A4d091105E218";
+    private static final String CONTRACT_ADDRESS = "0xb9BF2691A085A1C0b5D306A3b9d187453C464213";
 
     private final Credentials credentials;
     private final Web3j web3j;

@@ -188,9 +188,6 @@ public class AiAnalysisActivity extends AppCompatActivity {
     }
 
     /**
-     * 呼出 AI Agent 交易授权确认弹窗
-     */
-    /**
      * 呼出 AI Agent 交易授权确认弹窗 (支持用户自定义微调参数)
      */
     private void showAgentConfirmDialog(JSONObject intent) {
@@ -307,6 +304,7 @@ public class AiAnalysisActivity extends AppCompatActivity {
             Toast.makeText(this, "解析 AI 意图失败", Toast.LENGTH_SHORT).show();
         }
     }
+
     /**
      * Agent 自动调用区块链底层网络发起交易
      */
@@ -350,6 +348,11 @@ public class AiAnalysisActivity extends AppCompatActivity {
         btnSend.setEnabled(false);
 
         AppExecutors.getInstance().networkIO().execute(() -> {
+            // 【测试代码开始】记录大模型请求开始时间
+            long aiStartTime = System.currentTimeMillis();
+            android.util.Log.d("PerformanceTest", "🤖 开始调用 DeepSeek API...");
+            // 【测试代码结束】
+
             try {
                 JSONObject userMsg = new JSONObject();
                 userMsg.put("role", "user");
@@ -396,6 +399,12 @@ public class AiAnalysisActivity extends AppCompatActivity {
                         llChatContainer.removeView(loadingBubble);
                         addMessageToUI(aiReply, false);
                         btnSend.setEnabled(true);
+
+                        // 【测试代码开始】计算并输出 AI 响应时间
+                        long aiTotalTime = System.currentTimeMillis() - aiStartTime;
+                        android.util.Log.d("PerformanceTest", "✅ AI 回复渲染完成！总耗时: " + aiTotalTime + " ms");
+                        Toast.makeText(AiAnalysisActivity.this, "AI 思考耗时: " + (aiTotalTime / 1000.0) + " 秒", Toast.LENGTH_SHORT).show();
+                        // 【测试代码结束】
                     });
                 } else {
                     InputStream es = conn.getErrorStream();

@@ -58,7 +58,7 @@ import java.util.List;
 import java.util.Scanner;
 
 public class MainActivity extends AppCompatActivity {
-
+    private long syncStartTime = 0;
     private ActivityMainBinding binding;
     private Web3Repository repository;
     private List<Web3Repository.GameModel> allGamesList = new ArrayList<>();
@@ -428,6 +428,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void syncData() {
+
+        // 【测试代码开始】记录起始时间
+        syncStartTime = System.currentTimeMillis();
+        android.util.Log.d("PerformanceTest", "⏱️ 开始拉取链上数据并渲染...");
+        // 【测试代码结束】
+
         repository.getBalance(new Web3Repository.DataCallback<BigDecimal>() {
             @Override
             public void onSuccess(BigDecimal bkc) {
@@ -545,7 +551,7 @@ public class MainActivity extends AppCompatActivity {
                 tvStatus.setTextColor(0xFF0052FF);
             }
 
-// == 替换 MainActivity.java 里的内层循环 ==
+            // == 替换 MainActivity.java 里的内层循环 ==
             for (int i = 0; i < game.optionCount; i++) {
                 int optionId = i;
                 String realOptName = (i < game.optionNames.size()) ? game.optionNames.get(i) : "选项 " + optionId;
@@ -608,6 +614,19 @@ public class MainActivity extends AppCompatActivity {
                 llOptions.addView(rowView);
             }            binding.llLobbyContainer.addView(itemView);
         }
+
+        // 【测试代码开始】计算总耗时并输出
+        if (syncStartTime > 0) {
+            long totalTime = System.currentTimeMillis() - syncStartTime;
+            android.util.Log.d("PerformanceTest", "✅ 列表渲染完成！总耗时: " + totalTime + " ms");
+
+            // 为了方便你在不连电脑的情况下用手机直接看效果，我们弹个 Toast
+            Toast.makeText(this, "响应时间: " + totalTime + " ms", Toast.LENGTH_SHORT).show();
+
+            // 重置时间，准备下一次刷新测试
+            syncStartTime = 0;
+        }
+        // 【测试代码结束】
     }
 
     private void showStakeDialog(int gameId, int optionId, String optName) {

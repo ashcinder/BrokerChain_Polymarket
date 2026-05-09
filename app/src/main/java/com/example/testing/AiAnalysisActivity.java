@@ -170,9 +170,11 @@ public class AiAnalysisActivity extends AppCompatActivity {
                 btnExecute.setElevation(0f);
                 btnExecute.setCornerRadius((int) (8 * getResources().getDisplayMetrics().density));
 
+                int dp = (int) getResources().getDisplayMetrics().density;
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                lp.setMargins(0, (int) (12 * getResources().getDisplayMetrics().density), 0, 0);
+                // 左边距 40dp：留出头像(32dp)+间距(8dp)的空间，让按钮与对话卡片左对齐
+                lp.setMargins(40 * dp, 12 * dp, 48 * dp, 0);
                 btnExecute.setLayoutParams(lp);
 
                 // 绑定点击事件，呼出交易授权框

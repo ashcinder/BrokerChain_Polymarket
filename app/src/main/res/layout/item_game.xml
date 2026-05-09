@@ -99,17 +99,21 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="#F8FAFC"
-            android:orientation="vertical"
-            android:padding="16dp"
-            android:visibility="gone">
+            android:gravity="end"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp">
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_action"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:text="操作"
-                android:textColor="#FFFFFF"
-                app:cornerRadius="8dp" />
+                android:id="@+id/btn_ai_analysis_card"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="🤖 AI 分析"
+                android:textColor="#0052FF"
+                android:textSize="13sp"
+                app:cornerRadius="18dp"
+                app:strokeColor="#BFDBFE" />
         </LinearLayout>
 
     </LinearLayout>

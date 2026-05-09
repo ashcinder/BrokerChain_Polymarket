@@ -11,11 +11,9 @@ import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.generated.Uint8;
 
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,9 +39,6 @@ public class OracleDaemonManager {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable daemonRunnable;
 
-    // DeepSeek API 配置
-    private static final String DEEPSEEK_API_KEY = "sk-679c615e26234c67b00677ba689a80d8";
-    private static final String API_URL = "https://api.deepseek.com/chat/completions";
 
     private final List<Integer> processingGameIds = new ArrayList<>();
 
@@ -187,96 +182,72 @@ public class OracleDaemonManager {
     }
 
     /**
-     * 🌟 核心：DeepSeek 事实核查节点 (包含智能信息提取)
+     * DeepSeek 事实核查节点：通过 DeepSeekClient 发起请求，prompt 包含当前时间和截止时间
      * @param proposedWinnerIndex 爬虫给出的结果。如果爬虫 NO，则传入 -1
      */
     private void verifyWithDeepSeek(Web3Repository.GameModel game, int proposedWinnerIndex) {
-        AppExecutors.getInstance().networkIO().execute(() -> {
-            try {
-                String prompt = "你是一个极其严谨的区块链预言机（Oracle）事实核查节点。\n" +
-                        "你的唯一任务是核实以下博弈事件是否在现实世界中已经有了【确凿的、官方的最终结果】。\n\n" +
-                        "【博弈事件】: " + game.desc + "\n" +
-                        "【清算规则】: " + game.condition + "\n" +
-                        "【备选选项】: " + game.optionNames.toString() + "\n\n" +
-                        "【核心安全机制与惩罚规则】:\n" +
-                        "1. 如果该事件尚未发生、正在进行中、或者目前只有预测/民调而没有官方最终定论，你必须严格回复：【结果：未决】。\n" +
-                        "2. 只有当该事件已经彻底结束，并且有官方结果时，你才能回复：【结果：已决，胜者索引：X】（X代表获胜选项的索引数值，从0开始计算）。\n" +
-                        "严格按照以上格式输出，绝不能输出任何多余废话。";
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault());
+        String now = sdf.format(new java.util.Date());
+        String deadline = sdf.format(new java.util.Date(game.deadlineSec));
 
-                JSONObject userMsg = new JSONObject();
-                userMsg.put("role", "user");
-                userMsg.put("content", prompt);
+        String prompt = "你是一个极其严谨的区块链预言机（Oracle）事实核查节点。\n" +
+                "你的唯一任务是核实以下博弈事件是否在现实世界中已经有了【确凿的、官方的最终结果】。\n\n" +
+                "【当前时间】: " + now + "\n" +
+                "【博弈截止时间】: " + deadline + "\n" +
+                "【博弈事件】: " + game.desc + "\n" +
+                "【清算规则】: " + game.condition + "\n" +
+                "【备选选项】: " + game.optionNames.toString() + "\n\n" +
+                "【核心安全机制与惩罚规则】:\n" +
+                "1. 如果该事件尚未发生、正在进行中、或者目前只有预测/民调而没有官方最终定论，你必须严格回复：【结果：未决】。\n" +
+                "2. 只有当该事件已经彻底结束，并且有官方结果时，你才能回复：【结果：已决，胜者索引：X】（X代表获胜选项的索引数值，从0开始计算）。\n" +
+                "严格按照以上格式输出，绝不能输出任何多余废话。";
 
-                JSONArray messages = new JSONArray();
-                messages.put(userMsg);
+        JSONArray messages = new JSONArray();
+        try {
+            JSONObject userMsg = new JSONObject();
+            userMsg.put("role", "user");
+            userMsg.put("content", prompt);
+            messages.put(userMsg);
+        } catch (Exception e) {
+            callback.onLogAppended("[System Error] 构建请求失败: " + e.getMessage());
+            processingGameIds.remove(Integer.valueOf(game.id));
+            return;
+        }
 
-                JSONObject requestBody = new JSONObject();
-                requestBody.put("model", "deepseek-chat");
-                requestBody.put("messages", messages);
-                requestBody.put("stream", false);
-                requestBody.put("temperature", 0.0);
+        DeepSeekClient.chat(messages, 0.0, new DeepSeekClient.SimpleCallback() {
+            @Override
+            public void onSuccess(String aiReply) {
+                callback.onLogAppended("[AI Response] " + aiReply);
 
-                URL url = new URL(API_URL);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setRequestProperty("Authorization", "Bearer " + DEEPSEEK_API_KEY);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(30000);
-                conn.setDoOutput(true);
-
-                try (OutputStream os = conn.getOutputStream()) {
-                    byte[] input = requestBody.toString().getBytes(StandardCharsets.UTF_8);
-                    os.write(input, 0, input.length);
+                Matcher matcher = Pattern.compile("【结果：已决，胜者索引：(\\d+)】").matcher(aiReply);
+                int aiWinnerIndex = -1;
+                if (matcher.find()) {
+                    aiWinnerIndex = Integer.parseInt(matcher.group(1));
                 }
 
-                if (conn.getResponseCode() == 200) {
-                    JSONObject responseJson;
-                    try (InputStream is = conn.getInputStream();
-                         Scanner scanner = new Scanner(is, "UTF-8").useDelimiter("\\A")) {
-                        responseJson = new JSONObject(scanner.hasNext() ? scanner.next() : "");
+                if (proposedWinnerIndex != -1) {
+                    if (aiWinnerIndex == proposedWinnerIndex) {
+                        callback.onLogAppended("[Consensus] 🟢 共识达成！准备上链...");
+                        executeAutoResolve(game, aiWinnerIndex);
+                    } else {
+                        callback.onLogAppended("[Conflict] 🔴 爬虫与 AI 产生分歧！触发时间惩罚，挂起 5 分钟后重试。");
+                        setCooldown(game.id);
                     }
-
-                    String aiReply = responseJson.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-
-                    AppExecutors.getInstance().mainThread().execute(() -> {
-                        callback.onLogAppended("[AI Response] " + aiReply);
-
-                        // 🌟 利用正则动态解析 AI 返回的索引
-                        Matcher matcher = Pattern.compile("【结果：已决，胜者索引：(\\d+)】").matcher(aiReply);
-                        int aiWinnerIndex = -1;
-                        if (matcher.find()) {
-                            aiWinnerIndex = Integer.parseInt(matcher.group(1));
-                        }
-
-                        if (proposedWinnerIndex != -1) {
-                            // 🟢 场景 1 & 2 判定：爬虫 YES
-                            if (aiWinnerIndex == proposedWinnerIndex) {
-                                callback.onLogAppended("[Consensus] 🟢 共识达成！准备上链...");
-                                executeAutoResolve(game, aiWinnerIndex);
-                            } else {
-                                callback.onLogAppended("[Conflict] 🔴 爬虫与 AI 产生分歧！触发时间惩罚，挂起 5 分钟后重试。");
-                                setCooldown(game.id);
-                            }
-                        } else {
-                            // 🟡 场景 3 & 4 判定：爬虫 NO，AI 兜底
-                            if (aiWinnerIndex != -1) {
-                                callback.onLogAppended("[Fallback Success] 🟢 AI 兜底查证成功！准备上链...");
-                                executeAutoResolve(game, aiWinnerIndex);
-                            } else {
-                                callback.onLogAppended("[Unresolved] 🟡 AI 判断现实中仍无结果。触发时间惩罚，挂起 5 分钟后重试。");
-                                setCooldown(game.id);
-                            }
-                        }
-                    });
                 } else {
-                    throw new Exception("AI Node 连接失败: " + conn.getResponseCode());
+                    if (aiWinnerIndex != -1) {
+                        callback.onLogAppended("[Fallback Success] 🟢 AI 兜底查证成功！准备上链...");
+                        executeAutoResolve(game, aiWinnerIndex);
+                    } else {
+                        callback.onLogAppended("[Unresolved] 🟡 AI 判断现实中仍无结果。触发时间惩罚，挂起 5 分钟后重试。");
+                        setCooldown(game.id);
+                    }
                 }
-            } catch (Exception e) {
-                AppExecutors.getInstance().mainThread().execute(() -> {
-                    callback.onLogAppended("[System Error] AI 核查节点异常: " + e.getMessage());
-                    setCooldown(game.id); // 异常也算作验证失败，关入小黑屋
-                });
+            }
+
+            @Override
+            public void onError(String error) {
+                callback.onLogAppended("[System Error] AI 核查节点异常: " + error);
+                setCooldown(game.id);
             }
         });
     }

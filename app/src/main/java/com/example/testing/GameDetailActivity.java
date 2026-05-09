@@ -35,14 +35,9 @@ import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.generated.Uint8;
 
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,7 +46,6 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -68,7 +62,6 @@ public class GameDetailActivity extends AppCompatActivity {
     private boolean isAiManaged = false;
     private BigDecimal managedBetAmount = BigDecimal.ZERO;
     private long lastAiCheckTime = 0;
-    private static final String DEEPSEEK_API_KEY = "sk-679c615e26234c67b00677ba689a80d8";
 
     private final int[] CHART_COLORS = {0xFF0052FF, 0xFFF59E0B, 0xFFEF4444, 0xFF10B981};
 
@@ -518,77 +511,69 @@ public class GameDetailActivity extends AppCompatActivity {
         if (currentGameData == null) return;
         lastAiCheckTime = System.currentTimeMillis();
 
-        new Thread(() -> {
-            try {
-                StringBuilder prompt = new StringBuilder();
-                prompt.append("【托管分析任务】当前博弈池「").append(currentGameData.desc).append("」。\n");
-                prompt.append("各选项当前价格如下：\n");
+        BigDecimal totalVirtualBd = BigDecimal.ZERO;
+        for (int i = 0; i < currentGameData.optionCount; i++) {
+            totalVirtualBd = totalVirtualBd.add(new BigDecimal(currentGameData.virtualReserves.get(i)));
+        }
+        final BigDecimal finalTotal = totalVirtualBd;
 
-                BigDecimal totalVirtualBd = BigDecimal.ZERO;
-                for (int i = 0; i < currentGameData.optionCount; i++) {
-                    totalVirtualBd = totalVirtualBd.add(new BigDecimal(currentGameData.virtualReserves.get(i)));
-                }
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("【托管分析任务】当前博弈池「").append(currentGameData.desc).append("」。\n");
+        prompt.append("各选项当前价格如下：\n");
+        for (int i = 0; i < currentGameData.optionCount; i++) {
+            float prob = new BigDecimal(currentGameData.virtualReserves.get(i))
+                    .divide(finalTotal, 4, RoundingMode.HALF_UP).floatValue();
+            String optName = (i < currentGameData.optionNames.size()) ? currentGameData.optionNames.get(i) : "选项 " + i;
+            prompt.append("选项 ").append(i).append(" [").append(optName).append("] 价格: ").append(prob).append("\n");
+        }
+        prompt.append("如果发现由于市场情绪导致的显著定价错误(胜率被严重低估)，请在末尾严格输出指令块：AGENT_INTENT:{\"action\":\"MARKET_BUY\",\"optionId\":数字,\"reason\":\"理由\"}\n");
+        prompt.append("如果没有绝对把握，请直接回复 无需操作。");
 
-                for (int i = 0; i < currentGameData.optionCount; i++) {
-                    float prob = new BigDecimal(currentGameData.virtualReserves.get(i)).divide(totalVirtualBd, 4, RoundingMode.HALF_UP).floatValue();
-                    String optName = (i < currentGameData.optionNames.size()) ? currentGameData.optionNames.get(i) : "选项 " + i;
-                    prompt.append("选项 ").append(i).append(" [").append(optName).append("] 价格: ").append(prob).append("\n");
-                }
+        JSONArray messages = new JSONArray();
+        try {
+            JSONObject userMsg = new JSONObject();
+            userMsg.put("role", "user");
+            userMsg.put("content", prompt.toString());
+            messages.put(userMsg);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
 
-                prompt.append("如果发现由于市场情绪导致的显著定价错误(胜率被严重低估)，请在末尾严格输出指令块：AGENT_INTENT:{\"action\":\"MARKET_BUY\",\"optionId\":数字,\"reason\":\"理由\"}\n");
-                prompt.append("如果没有绝对把握，请直接回复 无需操作。");
+        DeepSeekClient.chat(messages, 1.0, new DeepSeekClient.SimpleCallback() {
+            @Override
+            public void onSuccess(String aiReply) {
+                if (!isAiManaged || isDestroyed() || isFinishing()) return;
 
-                JSONObject userMsg = new JSONObject();
-                userMsg.put("role", "user");
-                userMsg.put("content", prompt.toString());
+                Pattern pattern = Pattern.compile("AGENT_INTENT:(\\{.*\\})", Pattern.DOTALL);
+                Matcher matcher = pattern.matcher(aiReply);
+                if (!matcher.find()) return;
 
-                JSONArray messages = new JSONArray();
-                messages.put(userMsg);
-
-                JSONObject requestBody = new JSONObject();
-                requestBody.put("model", "deepseek-chat");
-                requestBody.put("messages", messages);
-                requestBody.put("stream", false);
-
-                URL url = new URL("https://api.deepseek.com/chat/completions");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setRequestProperty("Authorization", "Bearer " + DEEPSEEK_API_KEY);
-                conn.setDoOutput(true);
-
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
-                }
-
-                if (conn.getResponseCode() == 200) {
-                    Scanner scanner = new Scanner(conn.getInputStream(), "UTF-8").useDelimiter("\\A");
-                    String resStr = scanner.hasNext() ? scanner.next() : "";
-                    JSONObject responseJson = new JSONObject(resStr);
-                    String aiReply = responseJson.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-
-                    Pattern pattern = Pattern.compile("AGENT_INTENT:(\\{.*\\})", Pattern.DOTALL);
-                    Matcher matcher = pattern.matcher(aiReply);
-                    if (matcher.find() && isAiManaged) {
-                        JSONObject intent = new JSONObject(matcher.group(1));
-                        if (intent.has("action") && intent.getString("action").equals("MARKET_BUY")) {
-                            int optionId = intent.getInt("optionId");
-                            String reason = intent.has("reason") ? intent.getString("reason") : "发现套利空间";
-
-                            runOnUiThread(() -> {
-                                if (isDestroyed() || isFinishing()) return;
-                                Toast.makeText(this, "🤖 AI 托管触发：自动买入 [选项" + optionId + "]，理由：" + reason, Toast.LENGTH_LONG).show();
-                                BigInteger wei = org.web3j.utils.Convert.toWei(managedBetAmount, org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
-                                Function f = new Function("buyShares", Arrays.asList(new Uint256(currentGameData.id), new Uint8(optionId)), Collections.emptyList());
-                                executeTx(wei, f, "🤖 AI 智能托管订单执行成功！");
-                            });
-                        }
+                try {
+                    JSONObject intent = new JSONObject(matcher.group(1));
+                    if ("MARKET_BUY".equals(intent.optString("action"))) {
+                        int optionId = intent.getInt("optionId");
+                        String reason = intent.optString("reason", "发现套利空间");
+                        Toast.makeText(GameDetailActivity.this,
+                                "🤖 AI 托管触发：自动买入 [选项" + optionId + "]，理由：" + reason,
+                                Toast.LENGTH_LONG).show();
+                        BigInteger wei = org.web3j.utils.Convert.toWei(managedBetAmount,
+                                org.web3j.utils.Convert.Unit.ETHER).toBigInteger();
+                        Function f = new Function("buyShares",
+                                Arrays.asList(new Uint256(currentGameData.id), new Uint8(optionId)),
+                                Collections.emptyList());
+                        executeTx(wei, f, "🤖 AI 智能托管订单执行成功！");
                     }
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
             }
-        }).start();
+
+            @Override
+            public void onError(String error) {
+                // 托管场景静默处理，不打扰用户
+            }
+        });
     }
 
     private void renderPendingOrdersUI(LinearLayout llOptions) {

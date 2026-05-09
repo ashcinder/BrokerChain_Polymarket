@@ -21,7 +21,7 @@ public class LoginActivity extends AppCompatActivity {
 
     // 默认测试私钥（硬编码）
     private static final String DEFAULT_PK = "91d2b0df57b76eee51a7b3f4bda39ec53813968fbf9f8e04033f3c4e9ba4cb2f";
-
+    // deepseek测试账号：sk-679c615e26234c67b00677ba689a80d8
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);

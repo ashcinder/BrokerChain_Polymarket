@@ -79,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean advisoryLoaded = false;
     private boolean marketBriefLoaded = false;
     private Web3Repository.GameModel goldGame = null;
+    private MarketDataManager.MarketData latestMarketData = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -347,11 +348,39 @@ public class MainActivity extends AppCompatActivity {
                 loadMarketBrief();
             });
         }
-        // 首次启动自动加载
+
+        // 点击简报卡片整体 → 跳转 AI 分析，带入当前行情
+        com.google.android.material.card.MaterialCardView cvBrief = findViewById(R.id.cv_market_brief);
+        if (cvBrief != null) {
+            cvBrief.setOnClickListener(v -> launchAiWithMarketContext());
+        }
+
         if (!marketBriefLoaded) {
             marketBriefLoaded = true;
             loadMarketBrief();
         }
+    }
+
+    private void launchAiWithMarketContext() {
+        Intent intent = new Intent(this, AiAnalysisActivity.class);
+        intent.putExtra("PRIVATE_KEY", privateKey);
+        // 没有锁定到特定游戏时传 -1，AiAnalysisActivity 会以纯顾问模式运行
+        intent.putExtra("GAME_ID", goldGame != null ? goldGame.id : -1);
+
+        if (latestMarketData != null) {
+            MarketDataManager.MarketData d = latestMarketData;
+            String prompt = String.format(
+                    "请基于以下实时行情为我做一次深度黄金投研分析：\n" +
+                    "• XAU/USD：$%.2f（24h %+.2f%%）\n" +
+                    "• USD/CNY：%.4f\n" +
+                    "• AI情绪：%s\n" +
+                    "• 市场简报：%s\n\n" +
+                    "请从技术面、基本面、情绪面三个维度展开，并给出具体的操作建议。",
+                    d.goldPriceUsd, d.goldChange24h, d.usdCny,
+                    d.sentiment, d.brief);
+            intent.putExtra("INITIAL_PROMPT", prompt);
+        }
+        startActivity(intent);
     }
 
     private void loadMarketBrief() {
@@ -368,6 +397,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onSuccess(MarketDataManager.MarketData data) {
                 if (isDestroyed() || isFinishing()) return;
+                latestMarketData = data;
 
                 // 行情条
                 if (tvGoldPrice != null) {

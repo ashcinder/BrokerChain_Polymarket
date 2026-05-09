@@ -3,12 +3,8 @@ package com.example.testing;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -95,82 +91,13 @@ public class MarketDataManager {
         });
     }
 
-    // 金价 + 24h涨跌幅
-    // 主源: 新浪财经 hq.sinajs.cn（国内可达，自带涨跌幅）
-    // 备源: 东方财富 push2.eastmoney.com
+    // 复用 GoldAdvisoryManager 的实现，避免重复网络代码
     private static double[] fetchGoldWithChange() {
-        // 主源：新浪财经
-        // 返回格式: var hq_str_hf_XAU="现价,昨收,今开,最新,最高,最低,涨跌额,涨跌幅%,..."
-        try {
-            URL url = new URL("https://hq.sinajs.cn/list=hf_XAU");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(6000);
-            conn.setReadTimeout(6000);
-            conn.setRequestProperty("Referer", "https://finance.sina.com.cn");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12)");
-            if (conn.getResponseCode() == 200) {
-                try (InputStream is = conn.getInputStream();
-                     Scanner sc = new Scanner(is, "GBK").useDelimiter("\\A")) {
-                    String body = sc.hasNext() ? sc.next() : "";
-                    // 提取引号内的数据
-                    int start = body.indexOf('"');
-                    int end = body.lastIndexOf('"');
-                    if (start >= 0 && end > start) {
-                        String[] fields = body.substring(start + 1, end).split(",");
-                        if (fields.length > 1) {
-                            double price = Double.parseDouble(fields[0]);     // 现价
-                            double prevClose = Double.parseDouble(fields[1]); // 昨收
-                            double changePct = (prevClose > 0)
-                                    ? (price - prevClose) / prevClose * 100 : 0;
-                            if (price > 0) return new double[]{price, changePct};
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-
-        // 备源：东方财富（国际金价代码 Au9999）
-        try {
-            URL url = new URL("https://push2.eastmoney.com/api/qt/stock/get?secid=110.Au9999&fields=f43,f170");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            conn.setRequestProperty("Referer", "https://quote.eastmoney.com");
-            if (conn.getResponseCode() == 200) {
-                try (InputStream is = conn.getInputStream();
-                     Scanner sc = new Scanner(is, "UTF-8").useDelimiter("\\A")) {
-                    String body = sc.hasNext() ? sc.next() : "";
-                    JSONObject root = new JSONObject(body);
-                    JSONObject data = root.optJSONObject("data");
-                    if (data != null) {
-                        // f43=最新价(×100需除100), f170=涨跌幅(×100需除100)
-                        double price = data.optDouble("f43", 0) / 100.0;
-                        double changePct = data.optDouble("f170", 0) / 100.0;
-                        if (price > 0) return new double[]{price, changePct};
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-        return new double[]{0, 0};
+        return GoldAdvisoryManager.fetchGoldWithChange();
     }
 
-    // 美元/人民币汇率
     private static double fetchUsdCny() {
-        try {
-            URL url = new URL("https://open.er-api.com/v6/latest/USD");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            if (conn.getResponseCode() == 200) {
-                try (InputStream is = conn.getInputStream();
-                     Scanner sc = new Scanner(is, "UTF-8").useDelimiter("\\A")) {
-                    String body = sc.hasNext() ? sc.next() : "";
-                    JSONObject json = new JSONObject(body);
-                    return json.getJSONObject("rates").optDouble("CNY", 0);
-                }
-            }
-        } catch (Exception ignored) {}
-        return 0;
+        return GoldAdvisoryManager.fetchUsdCny();
     }
 
     private static String buildPrompt(double gold, double change, double cny) {

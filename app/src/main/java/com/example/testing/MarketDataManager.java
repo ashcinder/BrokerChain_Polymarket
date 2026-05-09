@@ -57,6 +57,17 @@ public class MarketDataManager {
                 latch.await();
             } catch (InterruptedException ignored) {}
 
+            // 未配置 API Key 时直接返回行情数据，跳过 DeepSeek 调用
+            if (!DeepSeekClient.isConfigured()) {
+                MarketData data = new MarketData();
+                data.goldPriceUsd = goldPrice.get();
+                data.goldChange24h = goldChange.get();
+                data.usdCny = usdCny.get();
+                data.brief = "🔑 请在「我的」页面配置 DeepSeek API Key 以启用 AI 简报";
+                callback.onSuccess(data);
+                return;
+            }
+
             // 构造 DeepSeek prompt
             String prompt = buildPrompt(goldPrice.get(), goldChange.get(), usdCny.get());
             JSONArray messages = new JSONArray();

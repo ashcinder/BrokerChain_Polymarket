@@ -453,10 +453,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadMarketBrief() {
         android.widget.TextView tvBrief = findViewById(R.id.tv_market_brief);
-        if (!DeepSeekClient.isConfigured()) {
-            if (tvBrief != null) tvBrief.setText("🔑 请先在「我的」页面配置 DeepSeek API Key 以启用 AI 简报");
-            return;
-        }
         android.widget.TextView tvGoldPrice = findViewById(R.id.tv_ticker_gold_price);
         android.widget.TextView tvGoldChange = findViewById(R.id.tv_ticker_gold_change);
         android.widget.TextView tvCny = findViewById(R.id.tv_ticker_cny);

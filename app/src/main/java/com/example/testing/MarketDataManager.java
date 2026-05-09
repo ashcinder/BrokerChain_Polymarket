@@ -117,9 +117,11 @@ public class MarketDataManager {
                     int end = body.lastIndexOf('"');
                     if (start >= 0 && end > start) {
                         String[] fields = body.substring(start + 1, end).split(",");
-                        if (fields.length > 7) {
-                            double price = Double.parseDouble(fields[0]);
-                            double changePct = Double.parseDouble(fields[7]);
+                        if (fields.length > 1) {
+                            double price = Double.parseDouble(fields[0]);     // 现价
+                            double prevClose = Double.parseDouble(fields[1]); // 昨收
+                            double changePct = (prevClose > 0)
+                                    ? (price - prevClose) / prevClose * 100 : 0;
                             if (price > 0) return new double[]{price, changePct};
                         }
                     }

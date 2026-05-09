@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.appcompat)
     // 如果 libs.material 报错，建议直接强行指定版本
     implementation("com.google.android.material:material:1.11.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 
     implementation(libs.activity)
     implementation(libs.constraintlayout)

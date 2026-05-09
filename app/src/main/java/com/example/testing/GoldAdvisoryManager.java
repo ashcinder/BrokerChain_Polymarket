@@ -16,9 +16,14 @@ import java.util.regex.Pattern;
 
 /**
  * 黄金投资顾问引擎
- * 流程：并行获取实时金价(新浪)+汇率 → DeepSeek 综合分析 → 结构化投资建议
+ * 流程：并行获取实时金价(gold-api.com)+汇率 → DeepSeek 综合分析 → 结构化投资建议
  */
 public class GoldAdvisoryManager {
+
+    // 新浪昨日收盘价缓存（只拉一次，用来算 24h 涨跌幅）
+    private static double sinaPrevClose = 0;
+    private static boolean sinaPrevCloseFetched = false;
+    public static String lastGoldSource = "";
 
     public static class Advisory {
         public String signal = "HOLD";
@@ -79,13 +84,77 @@ public class GoldAdvisoryManager {
         });
     }
 
-    // 主源：新浪财经（国内可达）
+    private static final String TAG = "GoldAdvisory";
+
+    // gold-api.com 免费实时国际金价，梯子/国内均可
     static double[] fetchGoldWithChange() {
+        // 优先 gold-api.com（实时 XAU/USD）
+        try {
+            URL url = new URL("https://api.gold-api.com/price/XAU");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            if (conn.getResponseCode() == 200) {
+                try (InputStream is = conn.getInputStream();
+                     Scanner sc = new Scanner(is, "UTF-8").useDelimiter("\\A")) {
+                    String body = sc.hasNext() ? sc.next() : "";
+                    JSONObject json = new JSONObject(body);
+                    double price = json.optDouble("price", 0);
+                    if (price > 0) {
+                        // 24h 涨跌幅：用新浪昨日收盘价（只拉一次，缓存复用）
+                        double prevClose = getSinaPrevClose();
+                        double change = prevClose > 0 ? (price - prevClose) / prevClose * 100 : 0;
+                        lastGoldSource = "gold-api.com";
+                        android.util.Log.d(TAG, "gold-api price=" + price + " prevClose=" + prevClose + " change=" + change);
+                        return new double[]{price, change};
+                    }
+                }
+            }
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "gold-api failed: " + e.getMessage());
+        }
+        // gold-api 失败时回退新浪
+        return fetchGoldSina();
+    }
+
+    // 从新浪拉一次昨日收盘价，后续走缓存
+    private static synchronized double getSinaPrevClose() {
+        if (sinaPrevCloseFetched) return sinaPrevClose;
+        sinaPrevCloseFetched = true;
         try {
             URL url = new URL("https://hq.sinajs.cn/list=hf_XAU");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(6000);
-            conn.setReadTimeout(6000);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setRequestProperty("Referer", "https://finance.sina.com.cn");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12)");
+            if (conn.getResponseCode() == 200) {
+                try (InputStream is = conn.getInputStream();
+                     Scanner sc = new Scanner(is, "GBK").useDelimiter("\\A")) {
+                    String body = sc.hasNext() ? sc.next() : "";
+                    int start = body.indexOf('"');
+                    int end = body.lastIndexOf('"');
+                    if (start >= 0 && end > start) {
+                        String[] fields = body.substring(start + 1, end).split(",");
+                        if (fields.length > 1) {
+                            sinaPrevClose = Double.parseDouble(fields[1]); // 昨日收盘价
+                            android.util.Log.d(TAG, "Sina prevClose=" + sinaPrevClose);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "Failed to fetch Sina prevClose: " + e.getMessage());
+        }
+        return sinaPrevClose;
+    }
+
+    private static double[] fetchGoldSina() {
+        try {
+            URL url = new URL("https://hq.sinajs.cn/list=hf_XAU");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
             conn.setRequestProperty("Referer", "https://finance.sina.com.cn");
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12)");
             if (conn.getResponseCode() == 200) {
@@ -100,12 +169,16 @@ public class GoldAdvisoryManager {
                             double price = Double.parseDouble(fields[0]);
                             double prevClose = Double.parseDouble(fields[1]);
                             double changePct = (prevClose > 0) ? (price - prevClose) / prevClose * 100 : 0;
+                            lastGoldSource = "新浪财经";
+                            android.util.Log.d(TAG, "Sina gold price=" + price + " change=" + changePct);
                             if (price > 0) return new double[]{price, changePct};
                         }
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            android.util.Log.e(TAG, "fetchGoldSina error", e);
+        }
         return new double[]{0, 0};
     }
 

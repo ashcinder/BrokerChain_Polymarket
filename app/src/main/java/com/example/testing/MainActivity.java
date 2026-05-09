@@ -480,9 +480,11 @@ public class MainActivity extends AppCompatActivity {
         android.widget.TextView tvGoldChange = findViewById(R.id.tv_ticker_gold_change);
         android.widget.TextView tvCny = findViewById(R.id.tv_ticker_cny);
         android.widget.TextView tvSentiment = findViewById(R.id.tv_ticker_sentiment);
+        android.widget.TextView tvUpdated = findViewById(R.id.tv_ticker_updated);
         android.widget.LinearLayout llNews = findViewById(R.id.ll_news_items);
 
         if (tvBrief != null) tvBrief.setText("正在获取市场数据...");
+        if (tvUpdated != null) tvUpdated.setText("刷新中...");
 
         MarketDataManager.fetch(new MarketDataManager.Callback() {
             @Override
@@ -491,6 +493,13 @@ public class MainActivity extends AppCompatActivity {
                 latestMarketData = data;
                 androidx.swiperefreshlayout.widget.SwipeRefreshLayout srl = findViewById(R.id.srl_home);
                 if (srl != null) srl.setRefreshing(false);
+
+                // 更新时间戳 + 数据来源
+                if (tvUpdated != null) {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
+                    String src = GoldAdvisoryManager.lastGoldSource.isEmpty() ? "" : " · " + GoldAdvisoryManager.lastGoldSource;
+                    tvUpdated.setText("更新于 " + sdf.format(new java.util.Date()) + src);
+                }
 
                 // 行情条
                 if (tvGoldPrice != null) {
@@ -539,6 +548,10 @@ public class MainActivity extends AppCompatActivity {
             public void onError(String error) {
                 if (isDestroyed() || isFinishing()) return;
                 if (tvBrief != null) tvBrief.setText("行情获取失败，请检查网络");
+                if (tvUpdated != null) {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
+                    tvUpdated.setText("刷新失败 " + sdf.format(new java.util.Date()));
+                }
                 androidx.swiperefreshlayout.widget.SwipeRefreshLayout srl = findViewById(R.id.srl_home);
                 if (srl != null) srl.setRefreshing(false);
             }

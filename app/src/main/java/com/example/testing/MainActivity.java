@@ -81,6 +81,16 @@ public class MainActivity extends AppCompatActivity {
     private Web3Repository.GameModel goldGame = null;
     private MarketDataManager.MarketData latestMarketData = null;
 
+    private final Handler tickerHandler = new Handler(Looper.getMainLooper());
+    private static final long TICKER_INTERVAL_MS = 60_000;
+    private final Runnable tickerRunnable = new Runnable() {
+        @Override
+        public void run() {
+            loadMarketBrief();
+            tickerHandler.postDelayed(this, TICKER_INTERVAL_MS);
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -109,6 +119,13 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         syncData();
+        tickerHandler.postDelayed(tickerRunnable, TICKER_INTERVAL_MS);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        tickerHandler.removeCallbacks(tickerRunnable);
     }
 
     @Override

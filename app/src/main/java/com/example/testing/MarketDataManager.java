@@ -122,6 +122,7 @@ public class MarketDataManager {
         return "你是一位黄金市场分析师，请基于以下实时数据给出简明市场简报：\n" +
                 "【金价】" + goldInfo + "\n" +
                 "【汇率】" + cnyInfo + "\n\n" +
+                "重要：brief 字段中若引用金价或汇率数字，必须与上方数据完全一致，不得四舍五入或改变小数位数。\n\n" +
                 "请严格按照以下 JSON 格式输出（不要用代码块包裹）：\n" +
                 "MARKET_BRIEF:{\"sentiment\":\"BULLISH或BEARISH或NEUTRAL\"," +
                 "\"brief\":\"一段话市场分析，60字以内，中文\"," +

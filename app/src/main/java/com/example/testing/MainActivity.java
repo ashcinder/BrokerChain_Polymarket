@@ -67,8 +67,7 @@ public class MainActivity extends AppCompatActivity {
 
     private ViewMode currentMode = ViewMode.HOME;
 
-    private static final String DEFAULT_GOLD_IMAGE =
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Gold_bullion_bars.jpg/640px-Gold_bullion_bars.jpg";
+    private static final String DEFAULT_GOLD_IMAGE = null; // 无远程默认图，使用本地占位
 
     // 锁定到唯一的黄金票据博弈池 ID（创建后从链上查到 ID 填入此处）
     private static final int GOLD_GAME_ID = 0;
@@ -454,13 +453,9 @@ public class MainActivity extends AppCompatActivity {
                                         .setNegativeButton("取消", null)
                                         .show();
                             } else {
-                                selectedImageUrl = DEFAULT_GOLD_IMAGE;
+                                // 无默认远程图，留空即可，上链时 avatarUrl 为空字符串
+                                selectedImageUrl = "";
                                 selectedImageUri = null;
-                                ImageView iv = findViewById(R.id.iv_selected_avatar);
-                                if (iv != null) {
-                                    loadNetworkImage(DEFAULT_GOLD_IMAGE, iv);
-                                    iv.clearColorFilter();
-                                }
                             }
                         })
                         .show();
@@ -481,9 +476,9 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "请完整填写主题、规则、选项和时间", Toast.LENGTH_SHORT).show();
                     return;
                 }
-                // 未选图时自动使用默认黄金图
+                // 未选图时 avatarUrl 留空
                 if (selectedImageUri == null && selectedImageUrl == null) {
-                    selectedImageUrl = DEFAULT_GOLD_IMAGE;
+                    selectedImageUrl = "";
                 }
 
                 String[] optsArray = optsStr.split(",");

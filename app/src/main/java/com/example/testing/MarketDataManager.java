@@ -96,48 +96,55 @@ public class MarketDataManager {
     }
 
     // 金价 + 24h涨跌幅
-    // 主源: goldprice.org（自带涨跌幅%，无需 key）
-    // 备源: metals.live（只有当前价，涨跌幅为0）
+    // 主源: 新浪财经 hq.sinajs.cn（国内可达，自带涨跌幅）
+    // 备源: 东方财富 push2.eastmoney.com
     private static double[] fetchGoldWithChange() {
-        // 主源 goldprice.org
+        // 主源：新浪财经
+        // 返回格式: var hq_str_hf_XAU="现价,昨收,今开,最新,最高,最低,涨跌额,涨跌幅%,..."
         try {
-            URL url = new URL("https://data-asg.goldprice.org/dbXRates/USD");
+            URL url = new URL("https://hq.sinajs.cn/list=hf_XAU");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(6000);
             conn.setReadTimeout(6000);
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36");
-            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("Referer", "https://finance.sina.com.cn");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12)");
             if (conn.getResponseCode() == 200) {
                 try (InputStream is = conn.getInputStream();
-                     Scanner sc = new Scanner(is, "UTF-8").useDelimiter("\\A")) {
+                     Scanner sc = new Scanner(is, "GBK").useDelimiter("\\A")) {
                     String body = sc.hasNext() ? sc.next() : "";
-                    // 返回格式: {"items":[{"curr":"USD","xauPrice":3234.56,"chgXau":0.82,...}]}
-                    JSONObject root = new JSONObject(body);
-                    JSONArray items = root.optJSONArray("items");
-                    if (items != null && items.length() > 0) {
-                        JSONObject item = items.getJSONObject(0);
-                        double price = item.optDouble("xauPrice", 0);
-                        double changePct = item.optDouble("pcXau", 0) * 100; // pcXau 是小数形式
-                        if (price > 0) return new double[]{price, changePct};
+                    // 提取引号内的数据
+                    int start = body.indexOf('"');
+                    int end = body.lastIndexOf('"');
+                    if (start >= 0 && end > start) {
+                        String[] fields = body.substring(start + 1, end).split(",");
+                        if (fields.length > 7) {
+                            double price = Double.parseDouble(fields[0]);
+                            double changePct = Double.parseDouble(fields[7]);
+                            if (price > 0) return new double[]{price, changePct};
+                        }
                     }
                 }
             }
         } catch (Exception ignored) {}
 
-        // 备源: metals.live
+        // 备源：东方财富（国际金价代码 Au9999）
         try {
-            URL url = new URL("https://api.metals.live/v1/spot/gold");
+            URL url = new URL("https://push2.eastmoney.com/api/qt/stock/get?secid=110.Au9999&fields=f43,f170");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
+            conn.setRequestProperty("Referer", "https://quote.eastmoney.com");
             if (conn.getResponseCode() == 200) {
                 try (InputStream is = conn.getInputStream();
                      Scanner sc = new Scanner(is, "UTF-8").useDelimiter("\\A")) {
                     String body = sc.hasNext() ? sc.next() : "";
-                    JSONArray arr = new JSONArray(body);
-                    if (arr.length() > 0) {
-                        double price = arr.getJSONObject(0).optDouble("gold", 0);
-                        return new double[]{price, 0};
+                    JSONObject root = new JSONObject(body);
+                    JSONObject data = root.optJSONObject("data");
+                    if (data != null) {
+                        // f43=最新价(×100需除100), f170=涨跌幅(×100需除100)
+                        double price = data.optDouble("f43", 0) / 100.0;
+                        double changePct = data.optDouble("f170", 0) / 100.0;
+                        if (price > 0) return new double[]{price, changePct};
                     }
                 }
             }

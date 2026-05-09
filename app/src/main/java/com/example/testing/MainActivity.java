@@ -78,6 +78,7 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<Intent> imagePickerLauncher;
     private OracleDaemonManager oracleManager;
     private boolean advisoryLoaded = false;
+    private boolean marketBriefLoaded = false;
     private Web3Repository.GameModel goldGame = null;
 
     @Override
@@ -100,6 +101,7 @@ public class MainActivity extends AppCompatActivity {
         setupCreateTabLogic();
         setupUI();
         setupGoldAdvisory();
+        setupMarketBrief();
     }
 
     @Override
@@ -187,6 +189,12 @@ public class MainActivity extends AppCompatActivity {
 
         if (mode == ViewMode.HOME) binding.tvTopTitle.setText("黄金票据市场");
         else if (mode == ViewMode.PORTFOLIO) binding.tvTopTitle.setText("我的持仓");
+
+        // 切到首页时若未加载行情简报则触发一次
+        if (mode == ViewMode.HOME && !marketBriefLoaded) {
+            marketBriefLoaded = true;
+            loadMarketBrief();
+        }
 
         // 切到「我的」时若还未加载情报则触发一次
         if (mode == ViewMode.PROFILE && !advisoryLoaded) {
@@ -328,6 +336,87 @@ public class MainActivity extends AppCompatActivity {
                 if (isDestroyed() || isFinishing()) return;
                 if (tvSummary != null) tvSummary.setText("分析失败，请检查网络后重试");
                 if (btnRefresh != null) btnRefresh.setEnabled(true);
+            }
+        });
+    }
+
+    private void setupMarketBrief() {
+        com.google.android.material.button.MaterialButton btnRefresh = findViewById(R.id.btn_refresh_brief);
+        if (btnRefresh != null) {
+            btnRefresh.setOnClickListener(v -> {
+                marketBriefLoaded = false;
+                loadMarketBrief();
+            });
+        }
+        // 首次启动自动加载
+        if (!marketBriefLoaded) {
+            marketBriefLoaded = true;
+            loadMarketBrief();
+        }
+    }
+
+    private void loadMarketBrief() {
+        android.widget.TextView tvBrief = findViewById(R.id.tv_market_brief);
+        android.widget.TextView tvGoldPrice = findViewById(R.id.tv_ticker_gold_price);
+        android.widget.TextView tvGoldChange = findViewById(R.id.tv_ticker_gold_change);
+        android.widget.TextView tvCny = findViewById(R.id.tv_ticker_cny);
+        android.widget.TextView tvSentiment = findViewById(R.id.tv_ticker_sentiment);
+        android.widget.LinearLayout llNews = findViewById(R.id.ll_news_items);
+
+        if (tvBrief != null) tvBrief.setText("正在获取市场数据...");
+
+        MarketDataManager.fetch(new MarketDataManager.Callback() {
+            @Override
+            public void onSuccess(MarketDataManager.MarketData data) {
+                if (isDestroyed() || isFinishing()) return;
+
+                // 行情条
+                if (tvGoldPrice != null) {
+                    tvGoldPrice.setText(data.goldPriceUsd > 0
+                            ? String.format("$%.2f", data.goldPriceUsd) : "--");
+                }
+                if (tvGoldChange != null) {
+                    if (data.goldChange24h != 0) {
+                        String sign = data.goldChange24h > 0 ? "+" : "";
+                        tvGoldChange.setText(String.format("%s%.2f%%", sign, data.goldChange24h));
+                        tvGoldChange.setTextColor(data.goldChange24h > 0 ? 0xFF10B981 : 0xFFEF4444);
+                    } else {
+                        tvGoldChange.setText("--");
+                        tvGoldChange.setTextColor(0xFF64748B);
+                    }
+                }
+                if (tvCny != null) {
+                    tvCny.setText(data.usdCny > 0 ? String.format("%.4f", data.usdCny) : "--");
+                }
+                if (tvSentiment != null) {
+                    switch (data.sentiment) {
+                        case "BULLISH": tvSentiment.setText("看多 ↑"); tvSentiment.setTextColor(0xFF10B981); break;
+                        case "BEARISH": tvSentiment.setText("看空 ↓"); tvSentiment.setTextColor(0xFFEF4444); break;
+                        default:        tvSentiment.setText("中性 →"); tvSentiment.setTextColor(0xFF64748B); break;
+                    }
+                }
+
+                // 简报正文
+                if (tvBrief != null) tvBrief.setText(data.brief.isEmpty() ? "暂无简报" : data.brief);
+
+                // 要闻列表
+                if (llNews != null) {
+                    llNews.removeAllViews();
+                    for (String item : data.newsItems) {
+                        android.widget.TextView tv = new android.widget.TextView(MainActivity.this);
+                        tv.setText("• " + item);
+                        tv.setTextColor(0xFF475569);
+                        tv.setTextSize(12.5f);
+                        tv.setPadding(0, 4, 0, 4);
+                        llNews.addView(tv);
+                    }
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                if (isDestroyed() || isFinishing()) return;
+                if (tvBrief != null) tvBrief.setText("行情获取失败，请检查网络");
             }
         });
     }

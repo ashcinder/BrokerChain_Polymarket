@@ -86,7 +86,7 @@
                         android:drawableStart="@android:drawable/ic_menu_search"
                         android:drawablePadding="8dp"
                         android:gravity="center_vertical"
-                        android:hint="在此搜索各类预测市场..."
+                        android:hint="搜索黄金票据市场..."
                         android:paddingStart="12dp"
                         android:singleLine="true"
                         android:textColor="#0F172A"
@@ -100,12 +100,227 @@
                 android:layout_height="match_parent">
 
                 <LinearLayout
-                    android:id="@+id/ll_lobby_container"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingTop="12dp"
-                    android:paddingBottom="40dp" />
+                    android:orientation="vertical">
+
+                    <!-- 行情条 -->
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:scrollbars="none"
+                        android:paddingHorizontal="12dp"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="4dp">
+
+                        <LinearLayout
+                            android:id="@+id/ll_ticker"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <!-- 金价 -->
+                            <com.google.android.material.card.MaterialCardView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="8dp"
+                                app:cardBackgroundColor="#FFFBEB"
+                                app:cardCornerRadius="20dp"
+                                app:cardElevation="0dp"
+                                app:strokeColor="#FDE68A"
+                                app:strokeWidth="1dp">
+
+                                <LinearLayout
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:gravity="center_vertical"
+                                    android:orientation="horizontal"
+                                    android:paddingHorizontal="12dp"
+                                    android:paddingVertical="6dp">
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="XAU/USD"
+                                        android:textColor="#92400E"
+                                        android:textSize="11sp"
+                                        android:textStyle="bold"
+                                        android:layout_marginEnd="6dp" />
+
+                                    <TextView
+                                        android:id="@+id/tv_ticker_gold_price"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="--"
+                                        android:textColor="#92400E"
+                                        android:textSize="13sp"
+                                        android:textStyle="bold"
+                                        android:layout_marginEnd="6dp" />
+
+                                    <TextView
+                                        android:id="@+id/tv_ticker_gold_change"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="--"
+                                        android:textSize="11sp" />
+                                </LinearLayout>
+                            </com.google.android.material.card.MaterialCardView>
+
+                            <!-- 汇率 -->
+                            <com.google.android.material.card.MaterialCardView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="8dp"
+                                app:cardBackgroundColor="#F0FDF4"
+                                app:cardCornerRadius="20dp"
+                                app:cardElevation="0dp"
+                                app:strokeColor="#BBF7D0"
+                                app:strokeWidth="1dp">
+
+                                <LinearLayout
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:gravity="center_vertical"
+                                    android:orientation="horizontal"
+                                    android:paddingHorizontal="12dp"
+                                    android:paddingVertical="6dp">
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="USD/CNY"
+                                        android:textColor="#065F46"
+                                        android:textSize="11sp"
+                                        android:textStyle="bold"
+                                        android:layout_marginEnd="6dp" />
+
+                                    <TextView
+                                        android:id="@+id/tv_ticker_cny"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="--"
+                                        android:textColor="#065F46"
+                                        android:textSize="13sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+                            </com.google.android.material.card.MaterialCardView>
+
+                            <!-- 情绪 -->
+                            <com.google.android.material.card.MaterialCardView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:cardBackgroundColor="#EFF6FF"
+                                app:cardCornerRadius="20dp"
+                                app:cardElevation="0dp"
+                                app:strokeColor="#BFDBFE"
+                                app:strokeWidth="1dp">
+
+                                <LinearLayout
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:gravity="center_vertical"
+                                    android:orientation="horizontal"
+                                    android:paddingHorizontal="12dp"
+                                    android:paddingVertical="6dp">
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="AI情绪"
+                                        android:textColor="#1E40AF"
+                                        android:textSize="11sp"
+                                        android:textStyle="bold"
+                                        android:layout_marginEnd="6dp" />
+
+                                    <TextView
+                                        android:id="@+id/tv_ticker_sentiment"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="分析中..."
+                                        android:textColor="#1E40AF"
+                                        android:textSize="11sp" />
+                                </LinearLayout>
+                            </com.google.android.material.card.MaterialCardView>
+
+                        </LinearLayout>
+                    </HorizontalScrollView>
+
+                    <!-- AI 市场简报卡片 -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cv_market_brief"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="12dp"
+                        android:layout_marginTop="8dp"
+                        android:layout_marginBottom="4dp"
+                        app:cardBackgroundColor="#FFFFFF"
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#E2E8F0"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="🤖 AI 市场简报"
+                                    android:textColor="#0F172A"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btn_refresh_brief"
+                                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:text="刷新"
+                                    android:textColor="#0052FF"
+                                    android:textSize="12sp"
+                                    app:iconTint="#0052FF" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/tv_market_brief"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:text="正在获取市场数据..."
+                                android:textColor="#475569"
+                                android:textSize="13sp"
+                                android:lineSpacingMultiplier="1.5" />
+
+                            <LinearLayout
+                                android:id="@+id/ll_news_items"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:orientation="vertical" />
+
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <LinearLayout
+                        android:id="@+id/ll_lobby_container"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="40dp" />
+
+                </LinearLayout>
             </androidx.core.widget.NestedScrollView>
         </LinearLayout>
 
@@ -482,6 +697,110 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="180dp"
                                 android:layout_marginTop="24dp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- 黄金 AI 投资顾问卡 -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cv_gold_advisory"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="16dp"
+                        app:cardBackgroundColor="#FFFBEB"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#FCD34D"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="20dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="黄金 AI 投资情报"
+                                    android:textColor="#92400E"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/tv_gold_price"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="获取中..."
+                                    android:textColor="#B45309"
+                                    android:textSize="13sp" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.card.MaterialCardView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    app:cardCornerRadius="6dp"
+                                    app:cardElevation="0dp">
+
+                                    <TextView
+                                        android:id="@+id/tv_gold_signal"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:paddingHorizontal="14dp"
+                                        android:paddingVertical="6dp"
+                                        android:text="--"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+                                </com.google.android.material.card.MaterialCardView>
+
+                                <TextView
+                                    android:id="@+id/tv_gold_confidence"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="10dp"
+                                    android:text=""
+                                    android:textColor="#92400E"
+                                    android:textSize="13sp" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/tv_gold_summary"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="正在分析市场动态，请稍候..."
+                                android:textColor="#78350F"
+                                android:textSize="14sp" />
+
+                            <LinearLayout
+                                android:id="@+id/ll_gold_factors"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:orientation="vertical" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_refresh_advisory"
+                                android:layout_width="match_parent"
+                                android:layout_height="44dp"
+                                android:layout_marginTop="14dp"
+                                android:text="刷新情报"
+                                app:backgroundTint="#F59E0B"
+                                app:cornerRadius="8dp" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 

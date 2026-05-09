@@ -602,13 +602,10 @@ public class MainActivity extends AppCompatActivity {
         loadingView.setTextColor(0xFF64748B);
         binding.llLobbyContainer.addView(loadingView);
 
-        // 只拉取锁定的黄金博弈池
-        repository.getGameDetail(GOLD_GAME_ID, new Web3Repository.DataCallback<Web3Repository.GameModel>() {
+        repository.getGames(new Web3Repository.DataCallback<List<Web3Repository.GameModel>>() {
             @Override
-            public void onSuccess(Web3Repository.GameModel game) {
-                goldGame = game;
-                allGamesList = new ArrayList<>();
-                allGamesList.add(game);
+            public void onSuccess(List<Web3Repository.GameModel> games) {
+                allGamesList = games;
                 if (currentMode == ViewMode.HOME || currentMode == ViewMode.PORTFOLIO) {
                     filterGames(binding.etSearchBar.getText().toString());
                 }
@@ -617,13 +614,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onError(String error) {
                 Toast.makeText(MainActivity.this, getFriendlyErrorMessage(error), Toast.LENGTH_SHORT).show();
-                binding.llLobbyContainer.removeAllViews();
-                TextView errView = new TextView(MainActivity.this);
-                errView.setText("黄金票据市场暂时无法连接，请检查网络\n" + error);
-                errView.setGravity(Gravity.CENTER);
-                errView.setPadding(32, 80, 32, 80);
-                errView.setTextColor(0xFFEF4444);
-                binding.llLobbyContainer.addView(errView);
             }
         });
     }

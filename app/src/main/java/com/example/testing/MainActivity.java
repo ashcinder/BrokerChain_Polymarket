@@ -58,7 +58,6 @@ import java.util.List;
 import java.util.Scanner;
 
 public class MainActivity extends AppCompatActivity {
-    private long syncStartTime = 0;
     private ActivityMainBinding binding;
     private Web3Repository repository;
     private List<Web3Repository.GameModel> allGamesList = new ArrayList<>();
@@ -68,9 +67,18 @@ public class MainActivity extends AppCompatActivity {
 
     private ViewMode currentMode = ViewMode.HOME;
 
+    private static final String DEFAULT_GOLD_IMAGE =
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Gold_bullion_bars.jpg/640px-Gold_bullion_bars.jpg";
+
+    // 锁定到唯一的黄金票据博弈池 ID（创建后从链上查到 ID 填入此处）
+    private static final int GOLD_GAME_ID = 0;
+
     private Uri selectedImageUri = null;
+    private String selectedImageUrl = null;   // 直接输入的 URL（优先于本地图片）
     private ActivityResultLauncher<Intent> imagePickerLauncher;
     private OracleDaemonManager oracleManager;
+    private boolean advisoryLoaded = false;
+    private Web3Repository.GameModel goldGame = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,6 +99,7 @@ public class MainActivity extends AppCompatActivity {
         setupProfile();
         setupCreateTabLogic();
         setupUI();
+        setupGoldAdvisory();
     }
 
     @Override
@@ -113,6 +122,7 @@ public class MainActivity extends AppCompatActivity {
                 result -> {
                     if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
                         selectedImageUri = result.getData().getData();
+                        selectedImageUrl = null;
                         ImageView ivSelected = findViewById(R.id.iv_selected_avatar);
                         if (ivSelected != null) {
                             ivSelected.setImageURI(selectedImageUri);
@@ -175,8 +185,14 @@ public class MainActivity extends AppCompatActivity {
         binding.viewCreate.setVisibility(mode == ViewMode.CREATE ? View.VISIBLE : View.GONE);
         binding.viewProfile.setVisibility(mode == ViewMode.PROFILE ? View.VISIBLE : View.GONE);
 
-        if (mode == ViewMode.HOME) binding.tvTopTitle.setText("发现市场");
+        if (mode == ViewMode.HOME) binding.tvTopTitle.setText("黄金票据市场");
         else if (mode == ViewMode.PORTFOLIO) binding.tvTopTitle.setText("我的持仓");
+
+        // 切到「我的」时若还未加载情报则触发一次
+        if (mode == ViewMode.PROFILE && !advisoryLoaded) {
+            advisoryLoaded = true;
+            loadGoldAdvisory();
+        }
 
         int activeColor = 0xFF0052FF;
         int inactiveColor = 0xFF64748B;
@@ -236,12 +252,129 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void setupGoldAdvisory() {
+        android.widget.LinearLayout llFactors = findViewById(R.id.ll_gold_factors);
+        com.google.android.material.button.MaterialButton btnRefresh = findViewById(R.id.btn_refresh_advisory);
+        if (btnRefresh == null) return;
+
+        btnRefresh.setOnClickListener(v -> loadGoldAdvisory());
+
+        // 首次进入「我的」页时自动加载
+        if (!advisoryLoaded) {
+            advisoryLoaded = true;
+            loadGoldAdvisory();
+        }
+    }
+
+    private void loadGoldAdvisory() {
+        android.widget.TextView tvPrice = findViewById(R.id.tv_gold_price);
+        android.widget.TextView tvSignal = findViewById(R.id.tv_gold_signal);
+        android.widget.TextView tvConfidence = findViewById(R.id.tv_gold_confidence);
+        android.widget.TextView tvSummary = findViewById(R.id.tv_gold_summary);
+        android.widget.LinearLayout llFactors = findViewById(R.id.ll_gold_factors);
+        com.google.android.material.button.MaterialButton btnRefresh = findViewById(R.id.btn_refresh_advisory);
+
+        if (tvSummary == null) return;
+        tvSummary.setText("正在联网分析市场动态...");
+        if (btnRefresh != null) btnRefresh.setEnabled(false);
+
+        GoldAdvisoryManager.fetch(new GoldAdvisoryManager.AdvisoryCallback() {
+            @Override
+            public void onSuccess(GoldAdvisoryManager.Advisory advisory) {
+                if (isDestroyed() || isFinishing()) return;
+
+                if (tvPrice != null) {
+                    tvPrice.setText(advisory.priceUsd > 0
+                            ? String.format("$%.2f/oz", advisory.priceUsd)
+                            : "价格未获取");
+                }
+
+                if (tvSignal != null) {
+                    tvSignal.setText(advisory.signal);
+                    int bgColor;
+                    switch (advisory.signal) {
+                        case "BUY":  bgColor = 0xFF10B981; break;
+                        case "SELL": bgColor = 0xFFEF4444; break;
+                        default:     bgColor = 0xFFF59E0B; break;
+                    }
+                    tvSignal.setBackgroundColor(bgColor);
+                }
+
+                if (tvConfidence != null) {
+                    tvConfidence.setText("置信度 " + advisory.confidence + "%");
+                }
+
+                if (tvSummary != null) {
+                    tvSummary.setText(advisory.summary);
+                }
+
+                if (llFactors != null) {
+                    llFactors.removeAllViews();
+                    for (String factor : advisory.factors) {
+                        android.widget.TextView tv = new android.widget.TextView(MainActivity.this);
+                        tv.setText("• " + factor);
+                        tv.setTextColor(0xFF92400E);
+                        tv.setTextSize(13f);
+                        tv.setPadding(0, 4, 0, 4);
+                        llFactors.addView(tv);
+                    }
+                }
+
+                if (btnRefresh != null) btnRefresh.setEnabled(true);
+            }
+
+            @Override
+            public void onError(String error) {
+                if (isDestroyed() || isFinishing()) return;
+                if (tvSummary != null) tvSummary.setText("分析失败，请检查网络后重试");
+                if (btnRefresh != null) btnRefresh.setEnabled(true);
+            }
+        });
+    }
+
     private void setupCreateTabLogic() {
         LinearLayout llSelectAvatar = findViewById(R.id.ll_select_avatar);
         if (llSelectAvatar != null) {
             llSelectAvatar.setOnClickListener(v -> {
-                Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-                imagePickerLauncher.launch(intent);
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("选择封面图来源")
+                        .setItems(new String[]{"从相册选择", "粘贴图片 URL", "使用默认黄金图"}, (dialog, which) -> {
+                            if (which == 0) {
+                                // ACTION_GET_CONTENT 比 ACTION_PICK 兼容性更好，模拟器也能用
+                                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                                intent.setType("image/*");
+                                imagePickerLauncher.launch(intent);
+                            } else if (which == 1) {
+                                EditText etUrl = new EditText(this);
+                                etUrl.setHint("https://example.com/gold.jpg");
+                                new androidx.appcompat.app.AlertDialog.Builder(this)
+                                        .setTitle("输入图片 URL")
+                                        .setView(etUrl)
+                                        .setPositiveButton("确认", (d, w) -> {
+                                            String url = etUrl.getText().toString().trim();
+                                            if (!url.isEmpty()) {
+                                                selectedImageUrl = url;
+                                                selectedImageUri = null;
+                                                ImageView iv = findViewById(R.id.iv_selected_avatar);
+                                                if (iv != null) {
+                                                    loadNetworkImage(url, iv);
+                                                    iv.clearColorFilter();
+                                                }
+                                            }
+                                        })
+                                        .setNegativeButton("取消", null)
+                                        .show();
+                            } else {
+                                selectedImageUrl = DEFAULT_GOLD_IMAGE;
+                                selectedImageUri = null;
+                                ImageView iv = findViewById(R.id.iv_selected_avatar);
+                                if (iv != null) {
+                                    loadNetworkImage(DEFAULT_GOLD_IMAGE, iv);
+                                    iv.clearColorFilter();
+                                }
+                            }
+                        })
+                        .show();
             });
         }
 
@@ -255,9 +388,13 @@ public class MainActivity extends AppCompatActivity {
                 EditText etDetail = findViewById(R.id.et_detailed_info);
                 String detailInfo = etDetail != null ? etDetail.getText().toString().trim() : "";
 
-                if (TextUtils.isEmpty(desc) || TextUtils.isEmpty(cond) || TextUtils.isEmpty(optsStr) || TextUtils.isEmpty(durationStr) || selectedImageUri == null) {
-                    Toast.makeText(this, "请完整填写信息，并选择一张封面图", Toast.LENGTH_SHORT).show();
+                if (TextUtils.isEmpty(desc) || TextUtils.isEmpty(cond) || TextUtils.isEmpty(optsStr) || TextUtils.isEmpty(durationStr)) {
+                    Toast.makeText(this, "请完整填写主题、规则、选项和时间", Toast.LENGTH_SHORT).show();
                     return;
+                }
+                // 未选图时自动使用默认黄金图
+                if (selectedImageUri == null && selectedImageUrl == null) {
+                    selectedImageUrl = DEFAULT_GOLD_IMAGE;
                 }
 
                 String[] optsArray = optsStr.split(",");
@@ -273,6 +410,19 @@ public class MainActivity extends AppCompatActivity {
                 DynamicArray<Utf8String> web3jOptions = new DynamicArray<>(Utf8String.class, utf8List);
 
                 btnDeploy.setEnabled(false);
+
+                // 有现成 URL（粘贴或默认图）时直接上链，跳过 imgbb 上传
+                if (selectedImageUrl != null) {
+                    final String finalUrl = selectedImageUrl;
+                    btnDeploy.setText("正在上链...");
+                    Function f = new Function("createGame", Arrays.asList(
+                            new Utf8String(desc), new Utf8String(cond), new Utf8String(finalUrl),
+                            new Utf8String(detailInfo), web3jOptions, new Uint256(durationMs)
+                    ), Collections.emptyList());
+                    executeTx(BigInteger.ZERO, f, "🎉 黄金票据市场发行成功！", btnDeploy);
+                    return;
+                }
+
                 btnDeploy.setText("正在上传图片到云端...");
 
                 AppExecutors.getInstance().networkIO().execute(() -> {
@@ -428,12 +578,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void syncData() {
-
-        // 【测试代码开始】记录起始时间
-        syncStartTime = System.currentTimeMillis();
-        android.util.Log.d("PerformanceTest", "⏱️ 开始拉取链上数据并渲染...");
-        // 【测试代码结束】
-
         repository.getBalance(new Web3Repository.DataCallback<BigDecimal>() {
             @Override
             public void onSuccess(BigDecimal bkc) {
@@ -452,16 +596,19 @@ public class MainActivity extends AppCompatActivity {
 
         binding.llLobbyContainer.removeAllViews();
         TextView loadingView = new TextView(this);
-        loadingView.setText("正在同步链上合约数据...");
+        loadingView.setText("正在同步黄金票据市场数据...");
         loadingView.setGravity(Gravity.CENTER);
         loadingView.setPadding(0, 50, 0, 50);
         loadingView.setTextColor(0xFF64748B);
         binding.llLobbyContainer.addView(loadingView);
 
-        repository.getGames(new Web3Repository.DataCallback<List<Web3Repository.GameModel>>() {
+        // 只拉取锁定的黄金博弈池
+        repository.getGameDetail(GOLD_GAME_ID, new Web3Repository.DataCallback<Web3Repository.GameModel>() {
             @Override
-            public void onSuccess(List<Web3Repository.GameModel> games) {
-                allGamesList = games;
+            public void onSuccess(Web3Repository.GameModel game) {
+                goldGame = game;
+                allGamesList = new ArrayList<>();
+                allGamesList.add(game);
                 if (currentMode == ViewMode.HOME || currentMode == ViewMode.PORTFOLIO) {
                     filterGames(binding.etSearchBar.getText().toString());
                 }
@@ -470,6 +617,13 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onError(String error) {
                 Toast.makeText(MainActivity.this, getFriendlyErrorMessage(error), Toast.LENGTH_SHORT).show();
+                binding.llLobbyContainer.removeAllViews();
+                TextView errView = new TextView(MainActivity.this);
+                errView.setText("黄金票据市场暂时无法连接，请检查网络\n" + error);
+                errView.setGravity(Gravity.CENTER);
+                errView.setPadding(32, 80, 32, 80);
+                errView.setTextColor(0xFFEF4444);
+                binding.llLobbyContainer.addView(errView);
             }
         });
     }
@@ -527,7 +681,7 @@ public class MainActivity extends AppCompatActivity {
             ImageView ivAvatar = itemView.findViewById(R.id.iv_item_avatar);
             LinearLayout llOptions = itemView.findViewById(R.id.ll_options_container);
 
-            tvTitle.setText("ID " + game.id + " | " + game.desc);
+            tvTitle.setText(game.desc.isEmpty() ? "黄金票据 #" + game.id : game.desc);
             tvVolume.setText("总交易量: " + formatWei(game.totalPool) + " BKC");
 
             if (ivAvatar != null && game.avatarUrl != null) {
@@ -612,21 +766,23 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 llOptions.addView(rowView);
-            }            binding.llLobbyContainer.addView(itemView);
+            }            // AI 分析小卡片：显示在每张游戏卡片底部
+            View llActionArea = itemView.findViewById(R.id.ll_action_area);
+            com.google.android.material.button.MaterialButton btnAiCard =
+                    itemView.findViewById(R.id.btn_ai_analysis_card);
+            if (llActionArea != null) llActionArea.setVisibility(View.VISIBLE);
+            if (btnAiCard != null) {
+                btnAiCard.setOnClickListener(v -> {
+                    Intent intent = new Intent(MainActivity.this, AiAnalysisActivity.class);
+                    intent.putExtra("PRIVATE_KEY", privateKey);
+                    intent.putExtra("GAME_ID", game.id);
+                    startActivity(intent);
+                });
+            }
+
+            binding.llLobbyContainer.addView(itemView);
         }
 
-        // 【测试代码开始】计算总耗时并输出
-        if (syncStartTime > 0) {
-            long totalTime = System.currentTimeMillis() - syncStartTime;
-            android.util.Log.d("PerformanceTest", "✅ 列表渲染完成！总耗时: " + totalTime + " ms");
-
-            // 为了方便你在不连电脑的情况下用手机直接看效果，我们弹个 Toast
-            Toast.makeText(this, "响应时间: " + totalTime + " ms", Toast.LENGTH_SHORT).show();
-
-            // 重置时间，准备下一次刷新测试
-            syncStartTime = 0;
-        }
-        // 【测试代码结束】
     }
 
     private void showStakeDialog(int gameId, int optionId, String optName) {
@@ -675,6 +831,7 @@ public class MainActivity extends AppCompatActivity {
                         restoreButton.setEnabled(true);
                         restoreButton.setText("签名并上链创建博弈");
                         selectedImageUri = null;
+                        selectedImageUrl = null;
                         ImageView iv = findViewById(R.id.iv_selected_avatar);
                         if (iv != null) iv.setImageResource(android.R.drawable.ic_menu_camera);
                     }

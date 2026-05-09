@@ -95,31 +95,36 @@ public class MarketDataManager {
         });
     }
 
-    // 金价 + 24h涨跌幅（Yahoo Finance）
+    // 金价 + 24h涨跌幅
+    // 主源: goldprice.org（自带涨跌幅%，无需 key）
+    // 备源: metals.live（只有当前价，涨跌幅为0）
     private static double[] fetchGoldWithChange() {
+        // 主源 goldprice.org
         try {
-            URL url = new URL("https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d&range=2d");
+            URL url = new URL("https://data-asg.goldprice.org/dbXRates/USD");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(6000);
             conn.setReadTimeout(6000);
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36");
+            conn.setRequestProperty("Accept", "application/json");
             if (conn.getResponseCode() == 200) {
                 try (InputStream is = conn.getInputStream();
                      Scanner sc = new Scanner(is, "UTF-8").useDelimiter("\\A")) {
                     String body = sc.hasNext() ? sc.next() : "";
+                    // 返回格式: {"items":[{"curr":"USD","xauPrice":3234.56,"chgXau":0.82,...}]}
                     JSONObject root = new JSONObject(body);
-                    JSONObject meta = root.getJSONObject("chart")
-                            .getJSONArray("result").getJSONObject(0)
-                            .getJSONObject("meta");
-                    double current = meta.optDouble("regularMarketPrice", 0);
-                    double prev = meta.optDouble("previousClose", 0);
-                    double change = (prev > 0) ? ((current - prev) / prev * 100) : 0;
-                    return new double[]{current, change};
+                    JSONArray items = root.optJSONArray("items");
+                    if (items != null && items.length() > 0) {
+                        JSONObject item = items.getJSONObject(0);
+                        double price = item.optDouble("xauPrice", 0);
+                        double changePct = item.optDouble("pcXau", 0) * 100; // pcXau 是小数形式
+                        if (price > 0) return new double[]{price, changePct};
+                    }
                 }
             }
         } catch (Exception ignored) {}
 
-        // fallback: metals.live
+        // 备源: metals.live
         try {
             URL url = new URL("https://api.metals.live/v1/spot/gold");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();

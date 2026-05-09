@@ -25,8 +25,8 @@ public class LoginActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        DeepSeekClient.init(this);
 
-        // 初始化 ViewBinding 并将布局文件 (activity_login.xml) 渲染到屏幕上
         binding = ActivityLoginBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 

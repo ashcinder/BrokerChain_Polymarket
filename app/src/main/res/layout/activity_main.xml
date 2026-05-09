@@ -804,11 +804,79 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
+                    <!-- DeepSeek API Key 配置卡片 -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cv_deepseek_config"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        app:cardBackgroundColor="#FFFFFF"
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#E2E8F0"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="16dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="🤖 DeepSeek AI"
+                                    android:textColor="#0F172A"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/tv_deepseek_status"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:background="#FEF3C7"
+                                    android:paddingHorizontal="8dp"
+                                    android:paddingVertical="3dp"
+                                    android:text="未配置"
+                                    android:textColor="#92400E"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/tv_deepseek_hint"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:text="配置你的 DeepSeek API Key 以启用 AI 分析、市场简报和投研助手功能"
+                                android:textColor="#64748B"
+                                android:textSize="13sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_set_api_key"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:layout_marginTop="12dp"
+                                android:text="配置 API Key"
+                                android:textSize="14sp"
+                                app:backgroundTint="#0052FF"
+                                app:cornerRadius="8dp" />
+
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_logout"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="match_parent"
                         android:layout_height="55dp"
+                        android:layout_marginTop="12dp"
                         android:text="断开钱包连接"
                         android:textColor="#EF4444"
                         app:cornerRadius="8dp"

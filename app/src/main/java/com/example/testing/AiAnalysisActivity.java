@@ -68,12 +68,21 @@ public class AiAnalysisActivity extends AppCompatActivity {
 
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
 
+        String initialPrompt = getIntent().getStringExtra("INITIAL_PROMPT");
+
+        if (!DeepSeekClient.isConfigured()) {
+            etInput.setEnabled(false);
+            btnSend.setEnabled(false);
+            etInput.setHint("请先配置 DeepSeek API Key");
+            addMessageToUI("🔑 尚未配置 DeepSeek API Key。\n\n请前往「我的」页面 → 配置 API Key，然后重新进入此页面。\n\n你可以在 platform.deepseek.com 免费注册并获取 Key。", false);
+            return;
+        }
+
         // 禁用输入，先抓实时行情再构建 system prompt
         btnSend.setEnabled(false);
         etInput.setEnabled(false);
         etInput.setHint("正在获取实时行情数据...");
 
-        String initialPrompt = getIntent().getStringExtra("INITIAL_PROMPT");
         initWithMarketData(initialPrompt);
 
         btnSend.setOnClickListener(v -> {

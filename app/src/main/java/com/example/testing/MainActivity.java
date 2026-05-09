@@ -87,6 +87,7 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
+        DeepSeekClient.init(this);
         privateKey = getIntent().getStringExtra("PRIVATE_KEY");
         if (privateKey == null) {
             finish();
@@ -229,6 +230,8 @@ public class MainActivity extends AppCompatActivity {
             finish();
         });
 
+        setupDeepSeekConfig();
+
         LineChart pnlChart = findViewById(R.id.chart_profile_pnl);
         if (pnlChart != null) {
             pnlChart.getDescription().setEnabled(false);
@@ -340,6 +343,71 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void setupDeepSeekConfig() {
+        TextView tvStatus = findViewById(R.id.tv_deepseek_status);
+        com.google.android.material.button.MaterialButton btnSetKey = findViewById(R.id.btn_set_api_key);
+        if (btnSetKey == null) return;
+
+        refreshDeepSeekStatus(tvStatus, btnSetKey);
+
+        btnSetKey.setOnClickListener(v -> showApiKeyDialog(tvStatus, btnSetKey));
+    }
+
+    private void refreshDeepSeekStatus(TextView tvStatus,
+            com.google.android.material.button.MaterialButton btnSetKey) {
+        if (DeepSeekClient.isConfigured()) {
+            if (tvStatus != null) {
+                tvStatus.setText("已连接");
+                tvStatus.setBackgroundColor(0xFFD1FAE5);
+                tvStatus.setTextColor(0xFF065F46);
+            }
+            if (btnSetKey != null) btnSetKey.setText("更换 API Key");
+        } else {
+            if (tvStatus != null) {
+                tvStatus.setText("未配置");
+                tvStatus.setBackgroundColor(0xFFFEF3C7);
+                tvStatus.setTextColor(0xFF92400E);
+            }
+            if (btnSetKey != null) btnSetKey.setText("配置 API Key");
+        }
+    }
+
+    private void showApiKeyDialog(TextView tvStatus,
+            com.google.android.material.button.MaterialButton btnSetKey) {
+        android.widget.EditText etKey = new android.widget.EditText(this);
+        etKey.setHint("sk-xxxxxxxxxxxxxxxxxxxxxxxx");
+        etKey.setPadding(40, 30, 40, 30);
+        String current = DeepSeekClient.getApiKey();
+        if (current != null) etKey.setText(current);
+
+        androidx.appcompat.app.AlertDialog.Builder builder =
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("配置 DeepSeek API Key")
+                        .setMessage("请前往 platform.deepseek.com 获取你的 API Key，新账号有免费额度。")
+                        .setView(etKey)
+                        .setPositiveButton("保存", (d, w) -> {
+                            String key = etKey.getText().toString().trim();
+                            if (key.startsWith("sk-") && key.length() > 10) {
+                                DeepSeekClient.saveApiKey(key);
+                                refreshDeepSeekStatus(tvStatus, btnSetKey);
+                                marketBriefLoaded = false;
+                                loadMarketBrief();
+                                Toast.makeText(this, "API Key 已保存，AI 功能已启用", Toast.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(this, "格式不正确，Key 应以 sk- 开头", Toast.LENGTH_SHORT).show();
+                            }
+                        })
+                        .setNegativeButton("取消", null);
+
+        if (DeepSeekClient.isConfigured()) {
+            builder.setNeutralButton("清除 Key", (d, w) -> {
+                DeepSeekClient.clearApiKey();
+                refreshDeepSeekStatus(tvStatus, btnSetKey);
+            });
+        }
+        builder.show();
+    }
+
     private void setupMarketBrief() {
         com.google.android.material.button.MaterialButton btnRefresh = findViewById(R.id.btn_refresh_brief);
         if (btnRefresh != null) {
@@ -385,6 +453,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadMarketBrief() {
         android.widget.TextView tvBrief = findViewById(R.id.tv_market_brief);
+        if (!DeepSeekClient.isConfigured()) {
+            if (tvBrief != null) tvBrief.setText("🔑 请先在「我的」页面配置 DeepSeek API Key 以启用 AI 简报");
+            return;
+        }
         android.widget.TextView tvGoldPrice = findViewById(R.id.tv_ticker_gold_price);
         android.widget.TextView tvGoldChange = findViewById(R.id.tv_ticker_gold_change);
         android.widget.TextView tvCny = findViewById(R.id.tv_ticker_cny);

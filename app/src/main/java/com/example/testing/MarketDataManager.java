@@ -64,7 +64,7 @@ public class MarketDataManager {
                 data.goldChange24h = goldChange.get();
                 data.usdCny = usdCny.get();
                 data.brief = "🔑 请在「我的」页面配置 DeepSeek API Key 以启用 AI 简报";
-                callback.onSuccess(data);
+                AppExecutors.getInstance().mainThread().execute(() -> callback.onSuccess(data));
                 return;
             }
 

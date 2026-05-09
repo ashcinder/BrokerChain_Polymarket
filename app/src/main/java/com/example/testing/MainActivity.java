@@ -428,9 +428,15 @@ public class MainActivity extends AppCompatActivity {
     private void setupMarketBrief() {
         com.google.android.material.button.MaterialButton btnRefresh = findViewById(R.id.btn_refresh_brief);
         if (btnRefresh != null) {
-            btnRefresh.setOnClickListener(v -> {
-                marketBriefLoaded = false;
+            btnRefresh.setOnClickListener(v -> loadMarketBrief());
+        }
+
+        androidx.swiperefreshlayout.widget.SwipeRefreshLayout srl = findViewById(R.id.srl_home);
+        if (srl != null) {
+            srl.setColorSchemeColors(0xFF0052FF, 0xFF10B981);
+            srl.setOnRefreshListener(() -> {
                 loadMarketBrief();
+                // 行情拉取完毕后在 loadMarketBrief 的回调里关闭 indicator
             });
         }
 
@@ -483,6 +489,8 @@ public class MainActivity extends AppCompatActivity {
             public void onSuccess(MarketDataManager.MarketData data) {
                 if (isDestroyed() || isFinishing()) return;
                 latestMarketData = data;
+                androidx.swiperefreshlayout.widget.SwipeRefreshLayout srl = findViewById(R.id.srl_home);
+                if (srl != null) srl.setRefreshing(false);
 
                 // 行情条
                 if (tvGoldPrice != null) {
@@ -531,6 +539,8 @@ public class MainActivity extends AppCompatActivity {
             public void onError(String error) {
                 if (isDestroyed() || isFinishing()) return;
                 if (tvBrief != null) tvBrief.setText("行情获取失败，请检查网络");
+                androidx.swiperefreshlayout.widget.SwipeRefreshLayout srl = findViewById(R.id.srl_home);
+                if (srl != null) srl.setRefreshing(false);
             }
         });
     }
